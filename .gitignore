@@ -1,0 +1,7 @@
+*.ipynb
+.python-version
+.ipynb_checkpoints/
+__pycache__
+data/
+results/
+teili/
