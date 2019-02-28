@@ -5,3 +5,4 @@ __pycache__
 data/
 results/
 teili/
+*.json
