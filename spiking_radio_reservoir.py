@@ -17,15 +17,15 @@ from asynchronousdeltamodulator import AsynchronousDeltaModulator
 from sklearn.linear_model import LogisticRegression
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import log_loss, fowlkes_mallows_score
+from sklearn.metrics import log_loss, silhouette_score
 from bayes_opt import BayesianOptimization
 from bayes_opt.observer import JSONLogger
 from bayes_opt.event import Events
 
 
-def setup_connectivity(N, pIR, pRR):
+def setup_random_connectivity(N, pIR, pRR):
     """
-    Setup the connectivity matrices for the synapsis between
+    Setup random connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
 
     Parameters
@@ -284,7 +284,7 @@ def score(X, Y, k):
     """
     kmeans = KMeans(n_clusters=k, random_state=42).fit(X)
     Y_pred = kmeans.labels_
-    score = fowlkes_mallows_score(Y, Y_pred)
+    score = silhouette_score(X, Y_pred)
     return score
 
 def plot_raster(monitor, directory):
