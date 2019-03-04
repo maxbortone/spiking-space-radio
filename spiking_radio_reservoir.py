@@ -585,7 +585,7 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     # Initialize network
     network = init_network(indices, times, connectivity, N, Itau, wRes, wInp)    
     # Run simulation
-    network.run(duration, recompile=True)
+    network.run(1000*ms, recompile=True)
     # Readout activity
     tot_num_samples = num_samples*len(modulations)
     X, bins, edges = readout(network['mRes'], ro_time, N, tot_num_samples, bin_size=5)
