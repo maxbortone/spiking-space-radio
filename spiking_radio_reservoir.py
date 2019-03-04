@@ -23,31 +23,97 @@ from bayes_opt.observer import JSONLogger
 from bayes_opt.event import Events
 
 
-def setup_random_connectivity(N, pIR, pRR):
+def _pAB(a, b, AoC, DoC):
+    if a[2]==1 and b[2]==1:
+        C = AoC[0]
+    elif (a[2]==1 and b[2]==-1) or (a[2]==-1 and b[2]==1):
+        C = AoC[1]
+    elif a[2]==-1 and b[2]==-1:
+        C = AoC[2]
+    return C*np.exp(-1*np.linalg.norm(a-b)/DoC**2)
+
+def _wAB(a, b, types):
+    if a[2]==-1 and b[2]==1:
+        w = -1
+    else:
+        w = 1
+    return w
+
+def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
     """
-    Setup random connectivity matrices for the synapsis between
+    Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
+    as folows:
+        - the reservoir is split in 2 groups
+        - each input neuron projects to one of the groups
+        - the neurons in the reservoir are arranged on a 2D-grid
+        - the probability of connection between reservoir neurons
+          is dependent on the distance between the neurons
 
     Parameters
     ----------
     N : int
         number of neurons in the reservoir
 
+    pInh : float
+        probability that a reservoir neuron is inhibitory
+
     pIR : float
         probability of connection for the input neurons
+
+    Ngx : int
+        number of reservoir neurons in the x-axis of the grid
+
+    Ngy : int
+        number of reservoir neurons in the y-axis of the grid
+
+    AoC : list
+        list of probability amplitudes for the connections between
+        reservoir neurons ([ex-ex, ex-inh, inh-inh])
     
-    pRR : float
-        probability of connection for the reservoir neurons
+    DoC : float
+        density of connections between reservoir neurons
 
     Returns
     -------
     connectivity : object
         contains the two connectivity matrices as
-        i and j indicesto be used in the connect method
+        i and j indices to be used in the connect method
         of the synapse object in Brian2
     """
-    Cin = np.random.choice([0, 1], size=(2, N), p=[1-pIR, pIR]).nonzero()
-    Cres = np.random.choice([0, 1], size=(N, N), p=[1-pRR, pRR]).nonzero()
+    if Ngx*Ngy!=N: 
+        raise Exception("Reservoir grid dimensions do not coincide with number of neurons.")
+    # organize neurons on grid
+    reservoir = np.arange(N)
+    grid = reservoir.reshape((Ngx, Ngy))
+    # define type of each neuron
+    types = np.random.choice([-1, 1], size=N, p=[pInh, 1-pInh])
+    # connect reservoir neurons
+    Cres = [[], []]
+    Wres = []
+    for n in reservoir:
+        a = np.array(list(zip(*np.where(grid==n)))[0])
+        a = np.append(a, types[n])
+        for x in range(Ngx):
+            for y in range(Ngy):
+                b = np.array([x, y, types[x*Ngy+y]])
+                p = _pAB(a, b, AoC, DoC)
+                r = np.random.uniform()
+                if r<p:
+                    Cres[0].append(n)
+                    Cres[1].append(grid[x, y])
+                    Wres.append(_wAB(a, b, types))
+    # connect input to reservoir
+    Cin = [[], []]
+    for n in reservoir:
+        r = np.random.uniform()
+        if r<pIR:
+            Cin[1].append(n)
+            if n<int(N/2):
+                Cin[0].append(0)
+            else:
+                Cin[0].append(1)
+    # return connectivity and weights
     connectivity = {
         'inp_res': {
             'i': Cin[0],
@@ -55,7 +121,8 @@ def setup_random_connectivity(N, pIR, pRR):
         },
         'res_res': {
             'i': Cres[0],
-            'j': Cres[1]
+            'j': Cres[1],
+            'w': Wres
         }
     }
     return connectivity
@@ -89,7 +156,7 @@ def setup_input_layer(components):
     components['monitors'] = {'mGen': mGen, 'mInp': mInp}
     return components
 
-def setup_reservoir_layer(components, connectivity, N, Itau, Wres, Winp):
+def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     """
     Setup the reservoir layer consisting of a group of randomly connected neurons.
     The connections can be excitatory or inhibitory.
@@ -111,11 +178,11 @@ def setup_reservoir_layer(components, connectivity, N, Itau, Wres, Winp):
         current of the membrane potential decay time of
         the reservoir neurons in pA
     
-    Wres : float or ndarray
-        weight or weight matrix of the reservoir synapsis
+    wRes : float
+        weight of the reservoir synapsis
 
-    Winp : float or ndarray
-        weight or weight matrix of the input synapsis
+    wInp : float
+        weight of the input synapsis
 
     Returns
     -------
@@ -127,12 +194,12 @@ def setup_reservoir_layer(components, connectivity, N, Itau, Wres, Winp):
     gRes.Itau = Itau
     sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
     sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
-    sResRes.weight = Wres
+    sResRes.weight = wRes*connectivity['res_res']['w']
     #sResRes.I_etau = Ietau
     #sResRes.I_itau = Iitau 
     sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
     sInpRes.connect(i=connectivity['inp_res']['i'], j=connectivity['inp_res']['j'])
-    sInpRes.weight = Winp
+    sInpRes.weight = wInp
     mRes = SpikeMonitor(gRes, name='mRes')
     components['layers']['gRes'] = gRes
     components['synapsis']['sInpRes'] = sInpRes
@@ -140,7 +207,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, Wres, Winp):
     components['monitors']['mRes'] = mRes
     return components
 
-def init_network(indices, times, connectivity, N, Itau):
+def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
     """
     Initialize the network with the input stimulus
 
@@ -157,19 +224,29 @@ def init_network(indices, times, connectivity, N, Itau):
         i and j indicesto be used in the connect method
         of the synapse object in Brian2
 
+    N : int
+        number of neurons in the reservoir
+
+    tau : float
+        membrane potential decay time in ms of the reservoir
+        neurons
+
+    wInp : float
+        weight of the input synapsis
+    
+    wRes : float
+        weight of the reservoir synapsis
+
+    Returns
+    -------
+    network : TeiliNetwork
+        instance of the network with all the commponents
     """
-    # define fixed reservoir paramenters
-    pInh = 0.2
-    wInp = 3500
-    wRes = 50
-    # define reservoir weights
-    num_connections = len(connectivity['res_res']['i'])
-    Wres = wRes*np.random.choice([-1, 1], size=num_connections, p=[pInh, 1-pInh])
     # setup input layer
     components = {'generator': None, 'layers': None, 'synapsis': None, 'monitors': None}
     components = setup_input_layer(components)
     # setup reservoir layer
-    components = setup_reservoir_layer(components, connectivity, N, Itau, Wres, wInp)
+    components = setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp)
     # set spikes
     components['generator'].set_spikes(indices, times)
     # initialize network
@@ -300,11 +377,12 @@ def plot_raster(monitor, directory):
         path to the folder into which the plot should be saved
     """
     # TODO: add pagination for long stimuli
-    plt.figure()
+    fig = plt.figure()
     plt.scatter(monitor.t/ms, monitor.i, marker=',', s=2)
     plt.xlabel('time [ms]')
     plt.ylabel('neuron index')
     plt.savefig(directory+'/raster_plot.pdf')
+    plt.close(fig=fig)
 
 def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory):
     """
@@ -340,14 +418,56 @@ def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory)
     """
     for i in range(tot_num_samples):
         sid = i-Y[i]*num_samples
-        plt.figure()
+        fig= plt.figure()
         plt.imshow(X[i].T, interpolation='nearest', origin='low', aspect='auto', \
            extent=[0, bins[0], 0, bins[1]], cmap='viridis')
         plt.title('{} @ {} #{}'.format(modulations[Y[i]], snr, sid))
         plt.xlabel('vector element')
         plt.ylabel('neuron index')
         plt.savefig(directory+'/{}_{}_{}.pdf'.format(modulations[Y[i]], snr, sid))
-        
+        plt.close(fig=fig)
+
+
+def plot_network(network, N, weights, directory):
+    """
+    Plot the network layers and connections
+
+    Parameters
+    ----------
+    network : TeiliNetwork
+        instance of the network with all the commponents
+
+    N : int
+        number of neurons in the reservoir
+
+    weights : list
+        weight of each synaptic connection in the reservoir
+
+    directory : string
+        path to the folder into which the plot should be saved
+    """
+    fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+    ax1.scatter(network['sGenInp'].i, network['sGenInp'].j, c='k', marker='.')
+    ax1.set_xlabel('Source neuron index')
+    ax1.set_ylabel('Target neuron index')
+    ax1.set_xticks([0, 1, 2, 3])
+    ax1.set_xticklabels(['I.up', 'I.dn', 'Q.up', 'Q.dn'])
+    ax1.set_yticks([0, 1])
+    ax1.set_title('Generator')
+    ax2.scatter(network['sInpRes'].i, network['sInpRes'].j, c='k', marker='.')
+    ax2.set_xlabel('Source neuron index')
+    #ax2.set_ylabel('Target neuron index')
+    ax2.set_xticks([0, 1])
+    ax2.set_title('Input')
+    C = np.zeros((N, N))
+    C[network['sResRes'].i, network['sResRes'].j] = weights
+    ax3.imshow(C, aspect='auto', origin='lower')
+    ax3.set_xlabel('Source neuron index')
+    #ax3.set_ylabel('Target neuron index')
+    ax3.set_title('Reservoir')
+    plt.savefig(directory+'/network_plot.pdf')
+    plt.close(fig=fig)
+
 def store_result(X, Y, score, params):
     """
     Store the data produced by the experiment to disk
@@ -378,7 +498,8 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(N=50, tau=50, pRR=0.3, \
+def experiment(wInp=3500, wRes=50, DoC=2, 
+    N=200, tau=20, Ngx=10, Ngy=20, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
     plot=False, store=False):
@@ -388,15 +509,24 @@ def experiment(N=50, tau=50, pRR=0.3, \
 
     Parameters
     ----------
+    wInp : float
+        weight of the input synapsis
+    
+    wRes : float
+        weight of the reservoir synapsis
+
     N : int
         number of neurons in the reservoir
 
     tau : float
         membrane potential decay time in ms of the reservoir
         neurons
-    
-    pRR : float
-        probability of connection for the reservoir neurons
+
+    Ngx : int
+        number of reservoir neurons in the x-axis of the grid
+
+    Ngy : int
+        number of reservoir neurons in the y-axis of the grid
 
     indices : list
         spike generator neuron indices
@@ -439,20 +569,21 @@ def experiment(N=50, tau=50, pRR=0.3, \
         performance metric of the reservoir (higher is better)      
     """
     start = time.perf_counter()
-    N = int(N)
-    print("- running with: N={}, tau={}, pRR={}".format(N, tau, pRR))
+    print("- running with: wInp={}, wRes={}, DoC={}".format(wRes, wInp, DoC))
     pIR = 0.3
-    connectivity = setup_connectivity(N, pIR, pRR)
+    pInh = 0.2
+    AoC = [0.3, 0.5, 0.1]
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
-    title = 'srres_{}_N{}tau{:.2f}pRR{:.2f}'.format(os.getpid(), N, tau, pRR)
+    title = 'srres_{}_wInp{}wRes{:.2f}DoC{:.2f}'.format(os.getpid(), wRes, wInp, DoC)
     directory = '../brian2_devices/' + title
     set_device('cpp_standalone', directory=directory, build_on_run=True)
     device.reinit()
     device.activate(directory=directory, build_on_run=True)
     defaultclock.dt = stretch_factor*us
     # Initialize network
-    network = init_network(indices, times, connectivity, N, Itau)    
+    network = init_network(indices, times, connectivity, N, Itau, wRes, wInp)    
     # Run simulation
     network.run(duration, recompile=True)
     # Readout activity
@@ -464,11 +595,12 @@ def experiment(N=50, tau=50, pRR=0.3, \
             os.makedirs(plots_dir)
         plot_raster(network['mRes'], plots_dir)
         plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, plots_dir)
+        plot_network(network, N, connectivity['res_res']['w'], plots_dir)
     # Measure reservoir perfomance
     X = list(map(lambda x: x.T.flatten(), X))
     s = score(X, Y, len(modulations))
     if store:
-        params = {'N': N, 'tau': tau, 'pRR': pRR}
+        params = {'wInp': wInp, 'wRes': wRes, 'DoC': DoC}
         store_result(X, Y, s, params)
     print("- experiment took {} [s]".format(time.perf_counter()-start))
     return s
@@ -522,53 +654,56 @@ if __name__ == '__main__':
     print("\t - duration: {}s".format(duration))
 
     # Test the experiment function
-    # score = experiment(N=50, tau=50, pRR=0.3, \
-    #     indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
-    #     modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
-    #     plot=True, store=False)
-    # print(score)
+    score = experiment(wInp=3500, wRes=50, DoC=2,
+        N=200, tau=20, Ngx=10, Ngy=20, \
+        indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
+        modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
+        plot=True, store=False)
+    print(score)
 
     # Define optimization bounds
-    pbounds = {
-        'N': (50, 200),     # number of neurons   
-        'tau': (20, 200),    # DPI time constant [ms]
-        'pRR': (0.3, 1.0)   # probability of connection
-        # TODO: define good bounds
-        #'wRes': ()         # units of baseweight
-        #'wInp': ()         # units of baseweight   
-    }
+    # pbounds = {
+    #     #'N': (50, 200),     # number of neurons   
+    #     #'tau': (20, 200),    # DPI time constant [ms]
+    #     #'pRR': (0.3, 1.0)   # probability of connection
+    #     # TODO: define good bounds
+    #     'wRes': (),         # units of baseweight
+    #     'wInp': (),         # units of baseweight
+    #     'DoC': ()           # density of connection   
+    # }
 
-    # Define Bayesian optmization process
-    def bo_experiment(N=50, tau=50, pRR=0.3):
-        return experiment(N=N, tau=tau, pRR=pRR, \
-            indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
-            modulations=modulations, snr=snr, num_samples=num_samples, Y=Y)
+    # # Define Bayesian optmization process
+    # def bo_experiment(wInp=3500, wRes=50, DoC=2):
+    #     return experiment(wInp=wInp, wRes=wRes, DoC=DoC,
+    #         N=N, tau=tau, \
+    #         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
+    #         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y)
 
-    optimizer = BayesianOptimization(
-        f=bo_experiment,
-        pbounds=pbounds,
-        random_state=42
-    )
+    # optimizer = BayesianOptimization(
+    #     f=bo_experiment,
+    #     pbounds=pbounds,
+    #     random_state=42
+    # )
 
-    # Subscribe logger
-    logger = JSONLogger(path="/home/massimo/Development/simulations/srres_bo_logger-{}.json".format(datetime.now().strftime("%Y-%m-%dT%H:%M:%S")))
-    optimizer.subscribe(Events.OPTMIZATION_STEP, logger)
+    # # Subscribe logger
+    # logger = JSONLogger(path="/home/massimo/Development/simulations/srres_bo_logger-{}.json".format(datetime.now().strftime("%Y-%m-%dT%H:%M:%S")))
+    # optimizer.subscribe(Events.OPTMIZATION_STEP, logger)
 
-    # TODO: try multithreading
-    # Optimize model performance
-    print("starting optimization")
-    start = time.perf_counter()
-    optimizer.maximize(
-        init_points=2,
-        n_iter=25,
-    )
+    # # TODO: try multithreading
+    # # Optimize model performance
+    # print("starting optimization")
+    # start = time.perf_counter()
+    # optimizer.maximize(
+    #     init_points=2,
+    #     n_iter=25,
+    # )
 
-    # Print results
-    best = optimizer.max
-    print("Best solution: ")
-    print("\t - score: {}".format(best['target']))
-    for (key, value) in best['params'].items():
-        print("\t - {}: {}".format(key, value))
+    # # Print results
+    # best = optimizer.max
+    # print("Best solution: ")
+    # print("\t - score: {}".format(best['target']))
+    # for (key, value) in best['params'].items():
+    #     print("\t - {}: {}".format(key, value))
 
-    # Print runtime info
-    print("optimization took: {}".format(time.perf_counter()-start))
+    # # Print runtime info
+    # print("optimization took: {}".format(time.perf_counter()-start))
