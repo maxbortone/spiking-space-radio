@@ -579,7 +579,7 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
-    title = 'srres_{}_wInp{}wRes{:.2f}DoC{:.2f}'.format(os.getpid(), wRes, wInp, DoC)
+    title = 'srres_{}_wInp{}wRes{:.2f}DoC{:.2f}'.format(os.getpid(), wInp, wRes, DoC)
     directory = '../brian2_devices/' + title
     set_device('cpp_standalone', directory=directory, build_on_run=True)
     device.reinit()
@@ -657,7 +657,7 @@ if __name__ == '__main__':
     print("\t - duration: {}s".format(duration))
 
     # Test the experiment function
-    score = experiment(wInp=3500, wRes=50, DoC=2,
+    score = experiment(wInp=3500, wRes=100, DoC=4,
         N=200, tau=20, Ngx=10, Ngy=20, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
