@@ -25,7 +25,6 @@ def plot_sample(signal, time_stim, indices, times, title):
     fig.add_subplot(ax1)
     fig.add_subplot(ax2)
     fig.add_subplot(ax3)
-    plt.show()
     
 def plot_input_synapsis(stateMon, spikeMon, weight, title):
     fig = plt.figure()
@@ -68,7 +67,6 @@ def plot_input_synapsis(stateMon, spikeMon, weight, title):
     fig.add_subplot(ax2)
     fig.add_subplot(ax3)
     fig.add_subplot(ax4)
-    plt.show()
     
 def plot_input_layer(stateMon, spikeMon, title):
     fig = plt.figure()
@@ -87,4 +85,3 @@ def plot_input_layer(stateMon, spikeMon, title):
     ax2.set_xlabel('Time [ms]')
     fig.add_subplot(ax1)
     fig.add_subplot(ax2)
-    plt.show()
