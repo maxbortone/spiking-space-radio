@@ -1,6 +1,7 @@
 import time, joblib
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as grs
 import multiprocessing as mp
 from datetime import datetime
 from tqdm import tqdm
@@ -96,7 +97,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
         a = np.append(a, types[n])
         for x in range(Ngx):
             for y in range(Ngy):
-                b = np.array([x, y, types[x*Ngy+y]])
+                b = np.array([x, y, types[grid[x, y]]])
                 p = _pAB(a, b, AoC, DoC)
                 r = np.random.uniform()
                 if r<p:
@@ -123,7 +124,9 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
             'i': Cres[0],
             'j': Cres[1],
             'w': Wres
-        }
+        },
+        'grid': grid,
+        'types': types
     }
     return connectivity
 
@@ -168,7 +171,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     
     connectivity : object
         contains the two connectivity matrices as
-        i and j indicesto be used in the connect method
+        i and j indices to be used in the connect method
         of the synapse object in Brian2
 
     N : int
@@ -221,7 +224,7 @@ def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
 
     connectivity : object
         contains the two connectivity matrices as
-        i and j indicesto be used in the connect method
+        i and j indices to be used in the connect method
         of the synapse object in Brian2
 
     N : int
@@ -426,7 +429,7 @@ def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=
         plt.xlabel('vector element')
         plt.ylabel('neuron index')
         if directory:
-            plt.savefig(directory+'/{}_{}_{}.pdf'.format(modulations[Y[i]], snr, sid))
+            plt.savefig(directory+'/{}_{}_{}.pdf'.format(modulations[Y[i]], snr, sid), bbox_inches='tight')
             plt.close(fig=fig)
 
 
@@ -468,7 +471,62 @@ def plot_network(network, N, weights, directory=None):
     #ax3.set_ylabel('Target neuron index')
     ax3.set_title('Reservoir')
     if directory:
-        plt.savefig(directory+'/network_plot.pdf')
+        plt.savefig(directory+'/network_plot.pdf', bbox_inches='tight')
+        plt.close(fig=fig)
+
+def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
+    """
+    Plot the network weights for each neuron
+
+    Parameters
+    ----------
+    network : TeiliNetwork
+        instance of the network with all the commponents
+
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
+
+    N : int
+        number of neurons in the reservoir
+
+    Ngx : int
+        number of reservoir neurons in the x-axis of the grid
+
+    Ngy : int
+        number of reservoir neurons in the y-axis of the grid
+
+    directory : string
+        path to the folder into which the plot should be saved
+    """
+    source = np.array(connectivity['res_res']['i'])
+    target = np.array(connectivity['res_res']['j'])
+    weight = np.array(connectivity['res_res']['w'])
+    types = np.array(connectivity['types'])
+    grid = np.array(connectivity['grid'])
+    fig = plt.figure()
+    grd = grs.GridSpec(Ngx, Ngy, wspace=0.0, hspace=0.0)
+    for n in range(N):
+        W = np.zeros((Ngx, Ngy))
+        t = target[np.where(source==n)[0]]
+        coords = np.array(list(map(lambda m: tuple(zip(*np.where(grid==m)))[0], t)))
+        W[coords[:, 0], coords[:, 1]] = weight[np.where(source==n)[0]]
+        ax = plt.Subplot(fig, grd[n])
+        im = ax.imshow(W.T, interpolation='nearest', origin='low', aspect='auto', \
+                extent=[0, Ngx, 0, Ngy], cmap='viridis', vmin=-1, vmax=1)
+        ax.set_yticks([])
+        ax.set_xticks([])
+        sx, sy = tuple(zip(*np.where(grid==n)))[0]
+        if types[n]==1:
+            ax.annotate("{}".format(n), xy=[sx, sy], fontsize=2, color='red')
+        else:
+            ax.annotate("{}".format(n), xy=[sx, sy], fontsize=2, color='white')
+        fig.add_subplot(ax)
+    ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
+    plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='weight')
+    if directory:
+        plt.savefig(directory+'/weights_plot.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
 def store_result(X, Y, score, params):
@@ -575,7 +633,7 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     print("- running with: wInp={}, wRes={}, DoC={}".format(wRes, wInp, DoC))
     pIR = 0.3
     pInh = 0.2
-    AoC = [0.3, 0.5, 0.1]
+    AoC = [1.0, 1.0, 1.0]#[0.3, 0.5, 0.1]
     connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
@@ -597,8 +655,9 @@ def experiment(wInp=3500, wRes=50, DoC=2,
         if not os.path.exists(plots_dir):
             os.makedirs(plots_dir)
         plot_raster(network['mRes'], plots_dir)
-        plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, plots_dir)
-        plot_network(network, N, connectivity['res_res']['w'], plots_dir)
+        plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=plots_dir)
+        plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
+        plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
     # Measure reservoir perfomance
     X = list(map(lambda x: x.T.flatten(), X))
     s = score(X, Y, len(modulations))
@@ -657,7 +716,7 @@ if __name__ == '__main__':
     print("\t - duration: {}s".format(duration))
 
     # Test the experiment function
-    score = experiment(wInp=3500, wRes=100, DoC=4,
+    score = experiment(wInp=3500, wRes=50, DoC=2,
         N=200, tau=20, Ngx=10, Ngy=20, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
