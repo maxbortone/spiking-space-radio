@@ -73,6 +73,7 @@ plot_flags = {
 
 # Define Bayesian optmization process
 params = {
+    'scale_wRes': 1.0,
     'pIR': 0.3,
     'pInh': 0.2,
     'AoC': [1.0, 1.0, 1.0],
@@ -88,15 +89,15 @@ pbounds = {
     #'pRR': (0.3, 1.0)          # probability of connection
     'wGen': (50, 5000),         # units of baseweight
     'wInp': (50, 5000),         # units of baseweight
-    'wRes': (50, 1000),         # units of baseweight
+    'loc_wRes': (50, 1000),         # units of baseweight
     #'DoC': ()                  # density of connection   
 }
 
-def bo_process(wGen=3500, wInp=3500, wRes=50):
-    s = 'wGen{}wInp{}wRes{}'.format(wGen, wInp, wRes)
+def bo_process(wGen=3500, wInp=3500, loc_wRes=50):
+    s = 'wGen{}wInp{}loc_wRes{}'.format(wGen, wInp, loc_wRes)
     uid = hashlib.md5(s.encode('utf-8')).hexdigest()
     title = '{}_{}'.format(exp_name, uid)
-    return experiment(wGen=wGen, wInp=wInp, wRes=wRes, 
+    return experiment(wGen=wGen, wInp=wInp, loc_wRes=loc_wRes, scale_wRes=params['scale_wRes'], 
         pIR=params['pIR'], pInh=params['pInh'], AoC=params['AoC'], DoC=params['DoC'], \
         N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
         indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
@@ -143,7 +144,7 @@ print("- Finished! Best solution: ")
 print("\t - score: {}".format(best['target']))
 for (key, value) in best['params'].items():
     print("\t - {}: {}".format(key, value))
-s = 'wGen{}wInp{}wRes{}'.format(best['params']['wGen'], best['params']['wInp'], best['params']['wRes'])
+s = 'wGen{}wInp{}wRes{}'.format(best['params']['wGen'], best['params']['wInp'], best['params']['loc_wRes'])
 uid = hashlib.md5(s.encode('utf-8')).hexdigest()
 print("\t - uid: {}".format(uid))
 

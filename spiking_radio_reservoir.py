@@ -30,14 +30,15 @@ def _pAB(a, b, AoC, DoC):
         C = AoC[2]
     return C*np.exp(-1*np.linalg.norm(a-b)/DoC**2)
 
-def _wAB(a, b, types):
+def _wAB(a, b, loc, scale, types):
     if a[2]==-1 and b[2]==1:
         w = -1
     else:
         w = 1
+    w = w*np.random.normal(loc=loc, scale=scale)
     return w
 
-def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
+def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes):
     """
     Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
@@ -72,6 +73,12 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
     DoC : float
         density of connections between reservoir neurons
 
+    loc_wRes : float
+        mean value of the reservoir weights distribution
+
+    scale_wRes : float
+        standard deviation of the reservoir weights distribution
+
     Returns
     -------
     connectivity : object
@@ -100,7 +107,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
                 if r<p:
                     Cres[0].append(n)
                     Cres[1].append(grid[x, y])
-                    Wres.append(_wAB(a, b, types))
+                    Wres.append(_wAB(a, b, loc_wRes, scale_wRes, types))
     # connect input to reservoir
     Cin = [[], []]
     for n in reservoir:
@@ -114,13 +121,13 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
     # return connectivity and weights
     connectivity = {
         'inp_res': {
-            'i': Cin[0],
-            'j': Cin[1]
+            'i': np.array(Cin[0]),
+            'j': np.array(Cin[1])
         },
         'res_res': {
-            'i': Cres[0],
-            'j': Cres[1],
-            'w': Wres
+            'i': np.array(Cres[0]),
+            'j': np.array(Cres[1]),
+            'w': np.array(Wres)
         },
         'grid': grid,
         'types': types
@@ -159,7 +166,7 @@ def setup_input_layer(components, wGen):
     components['monitors'] = {'mGen': mGen, 'mInp': mInp}
     return components
 
-def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
+def setup_reservoir_layer(components, connectivity, N, Itau, wInp):
     """
     Setup the reservoir layer consisting of a group of randomly connected neurons.
     The connections can be excitatory or inhibitory.
@@ -180,9 +187,6 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     Itau : float
         current of the membrane potential decay time of
         the reservoir neurons in pA
-    
-    wRes : float
-        weight of the reservoir synapsis
 
     wInp : float
         weight of the input synapsis
@@ -197,7 +201,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     gRes.Itau = Itau
     sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
     sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
-    sResRes.weight = wRes*np.array(connectivity['res_res']['w'])
+    sResRes.weight = connectivity['res_res']['w']
     #sResRes.I_etau = Ietau
     #sResRes.I_itau = Iitau 
     sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
@@ -213,7 +217,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     components['monitors']['smRes'] = smRes
     return components
 
-def init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes):
+def init_network(indices, times, connectivity, N, Itau, wGen, wInp):
     """
     Initialize the network with the input stimulus
 
@@ -243,8 +247,11 @@ def init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes):
     wInp : float
         weight of the input synapsis
     
-    wRes : float
-        weight of the reservoir synapsis
+    loc_wRes : float
+        mean value of the reservoir weights distribution
+
+    scale_wRes : float
+        standard deviation of the reservoir weights distribution
 
     Returns
     -------
@@ -255,7 +262,7 @@ def init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes):
     components = {'generator': None, 'layers': None, 'synapsis': None, 'monitors': None}
     components = setup_input_layer(components, wGen)
     # setup reservoir layer
-    components = setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp)
+    components = setup_reservoir_layer(components, connectivity, N, Itau, wInp)
     # set spikes
     components['generator'].set_spikes(indices, times)
     # initialize network
@@ -451,7 +458,7 @@ def plot_network(network, N, weights, directory=None):
     Parameters
     ----------
     network : TeiliNetwork
-        instance of the network with all the commponents
+        instance of the network with all the components
 
     N : int
         number of neurons in the reservoir
@@ -483,7 +490,7 @@ def plot_network(network, N, weights, directory=None):
     C = np.zeros((N, N))
     C[network['sResRes'].i, network['sResRes'].j] = weights
     ax3.imshow(C, interpolation='nearest', origin='low', aspect='auto', \
-                extent=[0, N, 0, N], cmap='viridis', vmin=-1, vmax=1)
+                extent=[0, N, 0, N], cmap='viridis', vmin=weights.min(), vmax=weights.max())
     ax3.set_xlabel('Source neuron index')
     ax3.tick_params(direction='in')
     ax3.yaxis.tick_right()
@@ -520,11 +527,11 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
     directory : string
         path to the folder into which the plot should be saved
     """
-    source = np.array(connectivity['res_res']['i'])
-    target = np.array(connectivity['res_res']['j'])
-    weight = np.array(connectivity['res_res']['w'])
-    types = np.array(connectivity['types'])
-    grid = np.array(connectivity['grid'])
+    source = connectivity['res_res']['i']
+    target = connectivity['res_res']['j']
+    weight = connectivity['res_res']['w']
+    types = connectivity['types']
+    grid = connectivity['grid']
     fig = plt.figure()
     grd = grs.GridSpec(Ngx, Ngy, wspace=0.0, hspace=0.0)
     for n in range(N):
@@ -534,7 +541,7 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
         W[coords[:, 0], coords[:, 1]] = weight[np.where(source==n)[0]]
         ax = plt.Subplot(fig, grd[n])
         im = ax.imshow(W.T, interpolation='nearest', origin='low', aspect='auto', \
-                extent=[0, Ngx, 0, Ngy], cmap='viridis', vmin=-1, vmax=1)
+                extent=[0, Ngx, 0, Ngy], cmap='viridis', vmin=weight.min(), vmax=weight.max())
         ax.set_yticks([])
         ax.set_xticks([])
         sx, sy = tuple(zip(*np.where(grid==n)))[0]
@@ -650,7 +657,7 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(wGen=3500, wInp=3500, wRes=50, 
+def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
     pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
     N=200, tau=20, Ngx=10, Ngy=20, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
@@ -668,8 +675,11 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     wInp : float
         weight of the input synapsis
     
-    wRes : float
-        weight of the reservoir synapsis
+    loc_wRes : float
+        mean value of the reservoir weights distribution
+
+    scale_wRes : float
+        standard deviation of the reservoir weights distribution
 
     pIR : float
         probability of connection for the input neurons
@@ -747,10 +757,10 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
         performance metric of the reservoir (higher is better)      
     """
     start = time.perf_counter()
-    print("- running with: wGen={}, wInp={}, wRes={}".format(wGen, wInp, wRes))
+    print("- running with: wGen={}, wInp={}, loc_wRes={}, scale_wRes={}".format(wGen, wInp, loc_wRes, scale_wRes))
     # Setup connectivity of the network
     # and the neurons time constant
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     if title==None:
@@ -761,7 +771,7 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     device.activate(directory=directory, build_on_run=True)
     defaultclock.dt = stretch_factor*us
     # Initialize network
-    network = init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes)    
+    network = init_network(indices, times, connectivity, N, Itau, wGen, wInp)    
     # Run simulation
     network.run(duration, recompile=True)
     # Readout activity
@@ -771,7 +781,9 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     if plot:
         if exp_dir==None:
             exp_dir = directory
-        plots_dir = '{}/plots/{}'.format(exp_dir, title)
+            plots_dir = '{}/plots'.format(exp_dir)
+        else:
+            plots_dir = '{}/plots/{}'.format(exp_dir, title)
         if not os.path.exists(plots_dir):
             os.makedirs(plots_dir)
         if plot['raster']:
@@ -789,7 +801,8 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     # Measure reservoir perfomance
     s = score(X, Y, len(modulations))
     if store:
-        params = {'wInp': wInp, 'wRes': wRes, 'DoC': DoC}
+        # TODO: refactor params
+        params = {'wInp': wInp, 'loc_wRes': loc_wRes, 'DoC': DoC}
         store_result(X, Y, s, params)
     # Remove device folder
     if remove_device:
@@ -852,9 +865,9 @@ if __name__ == '__main__':
         'network': True,
         'weights': True,
         'similarity': True,
-        'currents': True
+        'currents': False
     }
-    score = experiment(wGen=3500, wInp=3500, wRes=50, 
+    score = experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
         pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \

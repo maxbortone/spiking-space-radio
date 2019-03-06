@@ -17,22 +17,22 @@ def generate_sample(freq, phase, plot=False, title=None):
         plot_sample(signal, time_stim, indices, times, title)
     return indices, times
 
-def test(wInp=3500, wRes=50, pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+def test(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
         stretch_factor=None, duration=None, ro_time=None, num_samples=None, Y=None):
     start = time.perf_counter()
-    print("- running with: wInp={}, wRes={}, DoC={}".format(wInp, wRes, DoC))
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
+    print("- running with: wInp={}, loc_wRes={}, scale_wRes={}".format(wInp, loc_wRes, scale_wRes))
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
-    title = 'srres_{}_wInp{}wRes{:.2f}DoC{:.2f}'.format(os.getpid(), wInp, wRes, DoC)
+    title = 'recact_{}'.format(os.getpid())
     directory = '../brian2_devices/' + title
     set_device('cpp_standalone', directory=directory, build_on_run=True)
     device.reinit()
     device.activate(directory=directory, build_on_run=True)
     defaultclock.dt = stretch_factor*us
     # Initialize network
-    network = init_network(indices, times, connectivity, N, Itau, wRes, wInp)    
+    network = init_network(indices, times, connectivity, N, Itau, wGen, wInp)    
     # Run simulation
     network.run(duration, recompile=True)
     # Readout activity
@@ -98,5 +98,5 @@ for (i, p) in enumerate(phases):
     to = duration*(i+1)
     Y.append(i)
 
-test(wRes=50, pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, 
+test(loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, 
     stretch_factor=stretch_factor, duration=to, ro_time=duration, num_samples=len(phases), Y=Y)
