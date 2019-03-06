@@ -1,4 +1,5 @@
 import time, joblib
+import os, shutil
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
@@ -13,9 +14,6 @@ from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
 from teili.models.neuron_models import DPI
 from teili.models.synapse_models import DPISyn
-import sys, os
-sys.path.insert(0, '../spiking-radio/runner/components')
-from asynchronousdeltamodulator import AsynchronousDeltaModulator
 from sklearn.linear_model import LogisticRegression
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
@@ -657,7 +655,7 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     N=200, tau=20, Ngx=10, Ngy=20, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
-    plot=False, store=False):
+    plot=False, store=False, title=None, exp_dir=None, remove_device=False):
     """
     Run an experiment on a reservoir with given properties and evaluate
     its performance in terms of clustering inputs of different classes.
@@ -732,17 +730,31 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     store : bool
         flag to store the results from the experiment
 
+    title : string
+        unique title for the experiment
+
+    exp_dir : path
+        path to the experiment directory where to store
+        the plots
+
+    remove_device : bool
+        wheter the device folder should be removed after
+        the experiment or not
+
     Returns
     -------
     score : float
         performance metric of the reservoir (higher is better)      
     """
     start = time.perf_counter()
-    print("- running with: wInp={}, wRes={}, DoC={}".format(wRes, wInp, DoC))
+    print("- running with: wGen={}, wInp={}, wRes={}".format(wGen, wInp, wRes))
+    # Setup connectivity of the network
+    # and the neurons time constant
     connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
-    title = 'srres_{}_wInp{}wRes{:.2f}DoC{:.2f}'.format(os.getpid(), wInp, wRes, DoC)
+    if title==None:
+        title = 'srres_{}'.format(os.getpid())
     directory = '../brian2_devices/' + title
     set_device('cpp_standalone', directory=directory, build_on_run=True)
     device.reinit()
@@ -757,7 +769,9 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     X, bins, edges = readout(network['mRes'], ro_time, N, tot_num_samples, bin_size=5)
     # Plot
     if plot:
-        plots_dir = directory+'/plots'
+        if exp_dir==None:
+            exp_dir = directory
+        plots_dir = '{}/plots/{}'.format(exp_dir, title)
         if not os.path.exists(plots_dir):
             os.makedirs(plots_dir)
         if plot['raster']:
@@ -777,11 +791,14 @@ def experiment(wGen=3500, wInp=3500, wRes=50,
     if store:
         params = {'wInp': wInp, 'wRes': wRes, 'DoC': DoC}
         store_result(X, Y, s, params)
+    # Remove device folder
+    if remove_device:
+        shutil.rmtree(directory, ignore_errors=True)
     print("- experiment took {} [s]".format(time.perf_counter()-start))
     return s
 
-if __name__ == '__main__':   
-    # TODO: clear devices folder
+if __name__ == '__main__':
+    from utils.modulator import AsynchronousDeltaModulator
 
     # Set brian2 extra compilation arguments
     prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
