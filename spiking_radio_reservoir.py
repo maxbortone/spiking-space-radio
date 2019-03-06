@@ -459,20 +459,29 @@ def plot_network(network, N, weights, directory=None):
     ax1.scatter(network['sGenInp'].i, network['sGenInp'].j, c='k', marker='.')
     ax1.set_xlabel('Source neuron index')
     ax1.set_ylabel('Target neuron index')
+    ax1.tick_params(direction='in')
     ax1.set_xticks([0, 1, 2, 3])
     ax1.set_xticklabels(['I.up', 'I.dn', 'Q.up', 'Q.dn'])
     ax1.set_yticks([0, 1])
     ax1.set_title('Generator')
     ax2.scatter(network['sInpRes'].i, network['sInpRes'].j, c='k', marker='.')
     ax2.set_xlabel('Source neuron index')
-    #ax2.set_ylabel('Target neuron index')
     ax2.set_xticks([0, 1])
+    ax2.tick_params(direction='in')
+    ax2.yaxis.tick_right()
+    ax2.yaxis.set_label_position("right")
+    ax2.yaxis.set_major_locator(ticker.MultipleLocator(25))
+    ax2.set_yticklabels([])
     ax2.set_title('Input')
     C = np.zeros((N, N))
     C[network['sResRes'].i, network['sResRes'].j] = weights
-    ax3.imshow(C, aspect='auto', origin='lower')
+    ax3.imshow(C, interpolation='nearest', origin='low', aspect='auto', \
+                extent=[0, N, 0, N], cmap='viridis', vmin=-1, vmax=1)
     ax3.set_xlabel('Source neuron index')
-    #ax3.set_ylabel('Target neuron index')
+    ax3.tick_params(direction='in')
+    ax3.yaxis.tick_right()
+    ax3.yaxis.set_label_position("right")
+    ax3.yaxis.set_major_locator(ticker.MultipleLocator(25))
     ax3.set_title('Reservoir')
     if directory:
         plt.savefig(directory+'/network_plot.pdf', bbox_inches='tight')
@@ -734,9 +743,9 @@ if __name__ == '__main__':
     modulations = [
         '8PSK', 'BPSK', 'QPSK'
     ]
-    num_samples = 20
+    num_samples = 5
     tot_num_samples = num_samples*len(modulations)
-    dataset = load_dataset('../spiking-radio/data/radioML/RML2016.10a_dict.pkl', snr=snr, normalize=True)
+    dataset = load_dataset('./data/radioML/RML2016.10a_dict.pkl', snr=snr, normalize=True)
     # Define delta modulators
     time_sample = np.arange(128)
     thrup = 0.01
@@ -772,7 +781,7 @@ if __name__ == '__main__':
     score = experiment(wInp=3500, wRes=50, 
         pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
-        indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
+        indices=indices, times=times, stretch_factor=stretch_factor, duration=stimulation+pause, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
         plot=True, store=False)
     print(score)
