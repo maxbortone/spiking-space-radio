@@ -21,9 +21,6 @@ from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
-from bayes_opt import BayesianOptimization
-from bayes_opt.observer import JSONLogger
-from bayes_opt.event import Events
 
 
 def _pAB(a, b, AoC, DoC):
@@ -132,7 +129,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC):
     }
     return connectivity
 
-def setup_input_layer(components):
+def setup_input_layer(components, wGen):
     """
     Setup the input layer consisting of a spike generator with 4 neurons
     that project to 2 input neurons through excitatory and inhibitory synapsis
@@ -141,6 +138,9 @@ def setup_input_layer(components):
     ----------
     components : object
         previously defined network components
+
+    wGen : float
+        weight of the generator synapsis
 
     Returns
     -------
@@ -152,7 +152,7 @@ def setup_input_layer(components):
     gInp.Iahp = 0.5*pA
     sGenInp = Connections(gGen, gInp, equation_builder=DPISyn(), method='euler', name='sGenInp')
     sGenInp.connect(i=[0, 1, 2, 3], j=[0, 0, 1, 1])
-    sGenInp.weight = [3500, -3500, 3500, -3500]
+    sGenInp.weight = wGen*np.array([1.0, -1.0, 1.0, -1.0])
     mGen = SpikeMonitor(gGen, name='mGen')
     mInp = SpikeMonitor(gInp, name='mInp')
     components['generator'] = gGen
@@ -215,7 +215,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     components['monitors']['smRes'] = smRes
     return components
 
-def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
+def init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes):
     """
     Initialize the network with the input stimulus
 
@@ -239,6 +239,9 @@ def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
         membrane potential decay time in ms of the reservoir
         neurons
 
+    wGen : float
+        weight of the generator synapsis
+
     wInp : float
         weight of the input synapsis
     
@@ -252,7 +255,7 @@ def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
     """
     # setup input layer
     components = {'generator': None, 'layers': None, 'synapsis': None, 'monitors': None}
-    components = setup_input_layer(components)
+    components = setup_input_layer(components, wGen)
     # setup reservoir layer
     components = setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp)
     # set spikes
@@ -368,9 +371,12 @@ def score(X, Y, k):
     score : float
         performance metric of the reservoir (higher is better)
     """
-    kmeans = KMeans(n_clusters=k, random_state=42).fit(X)
-    Y_pred = kmeans.labels_
-    score = silhouette_score(X, Y_pred)
+    try:
+        kmeans = KMeans(n_clusters=k, random_state=42).fit(X)
+        Y_pred = kmeans.labels_
+        score = silhouette_score(X, Y_pred)
+    except:
+        score = -1.0
     return score
 
 def plot_raster(monitor, directory=None):
@@ -587,6 +593,22 @@ def plot_similarity(X, Y, modulations, directory=None):
         plt.close(fig=fig)
 
 def plot_currents(monitor, connectivity, directory=None):
+    """
+    Plot the some randomly chosen synaptic currents
+
+    Parameters
+    ----------
+    monitor : StateMonitor
+        state monitor of the reservoir
+
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
+
+    directory : string
+        path to the folder into which the plot should be saved
+    """
     recorded_synapsis = monitor.record
     print("Synapse: ", recorded_synapsis)
     fig = plt.figure()
@@ -630,7 +652,7 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(wInp=3500, wRes=50, 
+def experiment(wGen=3500, wInp=3500, wRes=50, 
     pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
     N=200, tau=20, Ngx=10, Ngy=20, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
@@ -642,6 +664,9 @@ def experiment(wInp=3500, wRes=50,
 
     Parameters
     ----------
+    wGen : float
+        weight of the generator synapsis
+
     wInp : float
         weight of the input synapsis
     
@@ -700,8 +725,9 @@ def experiment(wInp=3500, wRes=50,
     Y : list
         labels of the samples in the input stimulus
 
-    plot : bool
-        flag to plot the results from the experiments
+    plot : object
+        object of key/value pairs to plot different
+        aspects of the experiment
 
     store : bool
         flag to store the results from the experiment
@@ -723,22 +749,29 @@ def experiment(wInp=3500, wRes=50,
     device.activate(directory=directory, build_on_run=True)
     defaultclock.dt = stretch_factor*us
     # Initialize network
-    network = init_network(indices, times, connectivity, N, Itau, wRes, wInp)    
+    network = init_network(indices, times, connectivity, N, Itau, wGen, wInp, wRes)    
     # Run simulation
     network.run(duration, recompile=True)
     # Readout activity
     tot_num_samples = num_samples*len(modulations)
     X, bins, edges = readout(network['mRes'], ro_time, N, tot_num_samples, bin_size=5)
+    # Plot
     if plot:
         plots_dir = directory+'/plots'
         if not os.path.exists(plots_dir):
             os.makedirs(plots_dir)
-        plot_raster(network['mRes'], plots_dir)
-        plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=plots_dir)
-        plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
-        plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
-        plot_similarity(X, Y, modulations, directory=plots_dir)
-        plot_currents(network['smRes'], connectivity, directory=plots_dir)
+        if plot['raster']:
+            plot_raster(network['mRes'], plots_dir)
+        if plot['result']:
+            plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=plots_dir)
+        if plot['network']:
+            plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
+        if plot['weights']:
+            plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
+        if plot['similarity']:
+            plot_similarity(X, Y, modulations, directory=plots_dir)
+        if plot['currents']:
+            plot_currents(network['smRes'], connectivity, directory=plots_dir)
     # Measure reservoir perfomance
     s = score(X, Y, len(modulations))
     if store:
@@ -796,57 +829,18 @@ if __name__ == '__main__':
     print("\t - duration: {}s".format(duration))
 
     # Test the experiment function
-    score = experiment(wInp=3500, wRes=50, 
+    plot_flags = {
+        'raster': True,
+        'result': True,
+        'network': True,
+        'weights': True,
+        'similarity': True,
+        'currents': True
+    }
+    score = experiment(wGen=3500, wInp=3500, wRes=50, 
         pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
-        plot=True, store=False)
+        plot=plot_flags, store=False)
     print(score)
-
-    # Define optimization bounds
-    # pbounds = {
-    #     #'N': (50, 200),     # number of neurons   
-    #     #'tau': (20, 200),    # DPI time constant [ms]
-    #     #'pRR': (0.3, 1.0)   # probability of connection
-    #     # TODO: define good bounds
-    #     'wRes': (),         # units of baseweight
-    #     'wInp': (),         # units of baseweight
-    #     'DoC': ()           # density of connection   
-    # }
-
-    # # Define Bayesian optmization process
-    # def bo_experiment(wInp=3500, wRes=50, DoC=2):
-    #     return experiment(wInp=wInp, wRes=wRes, DoC=DoC,
-    #         N=N, tau=tau, \
-    #         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
-    #         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y)
-
-    # optimizer = BayesianOptimization(
-    #     f=bo_experiment,
-    #     pbounds=pbounds,
-    #     random_state=42
-    # )
-
-    # # Subscribe logger
-    # logger = JSONLogger(path="/home/massimo/Development/simulations/srres_bo_logger-{}.json".format(datetime.now().strftime("%Y-%m-%dT%H:%M:%S")))
-    # optimizer.subscribe(Events.OPTMIZATION_STEP, logger)
-
-    # # TODO: try multithreading
-    # # Optimize model performance
-    # print("starting optimization")
-    # start = time.perf_counter()
-    # optimizer.maximize(
-    #     init_points=2,
-    #     n_iter=25,
-    # )
-
-    # # Print results
-    # best = optimizer.max
-    # print("Best solution: ")
-    # print("\t - score: {}".format(best['target']))
-    # for (key, value) in best['params'].items():
-    #     print("\t - {}: {}".format(key, value))
-
-    # # Print runtime info
-    # print("optimization took: {}".format(time.perf_counter()-start))
