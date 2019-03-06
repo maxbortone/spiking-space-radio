@@ -2,6 +2,7 @@ import time, joblib
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
+import matplotlib.ticker as ticker
 import multiprocessing as mp
 from datetime import datetime
 from tqdm import tqdm
@@ -19,6 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, silhouette_score
+from sklearn.metrics.pairwise import cosine_similarity
 from bayes_opt import BayesianOptimization
 from bayes_opt.observer import JSONLogger
 from bayes_opt.event import Events
@@ -307,6 +309,7 @@ def readout(monitor, ro_time, num_neurons, tot_num_samples, bin_size=1):
             bins=ro_bins, range=ro_range)
         X.append(hist)
         edges.append(ro_range)
+    X = list(map(lambda x: x.T.flatten(), X))
     return X, ro_bins, edges
 
 # Define classifier
@@ -423,7 +426,8 @@ def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=
     for i in range(tot_num_samples):
         sid = i-Y[i]*num_samples
         fig= plt.figure()
-        plt.imshow(X[i].T, interpolation='nearest', origin='low', aspect='auto', \
+        x = X[i].reshape((bins[1], bins[0]))
+        plt.imshow(x, interpolation='nearest', origin='low', aspect='auto', \
            extent=[0, bins[0], 0, bins[1]], cmap='viridis')
         plt.title('{} @ {} #{}'.format(modulations[Y[i]], snr, sid))
         plt.xlabel('vector element')
@@ -527,6 +531,47 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
     plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='weight')
     if directory:
         plt.savefig(directory+'/weights_plot.pdf', bbox_inches='tight')
+        plt.close(fig=fig)
+
+def plot_similarity(X, Y, modulations, directory=None):
+    """
+    Plot the cosine similarity matrix between the reservoir 
+    readouts of the samples
+
+    Parameters
+    ----------
+    X : ndarray (num_samples, num_features)
+        readout output from the reservoir for each sample
+        in the stimulus
+
+    Y : ndarray (num_samples)
+        labels for each sample in the stimulus
+
+    modulations : list
+        modulation classes in the input stimulus
+
+    directory : string
+        path to the folder into which the plot should be saved
+    """
+    X = [x for _, x in sorted(zip(Y, X), key=lambda pair: pair[0])]
+    S = cosine_similarity(X)
+    num_samples = len(X)
+    num_classes = len(np.unique(Y))
+    num_samples_per_class = int(num_samples/num_classes)
+    ticks = [(i+1)*num_samples_per_class for i in range(len(modulations))]
+    labels = [mod for _, mod in sorted(zip(np.unique(Y), modulations), key=lambda pair: pair[0])]
+    fig, ax = plt.subplots()
+    im = ax.imshow(S.T, interpolation='nearest', origin='low', aspect='auto', \
+           extent=[0, num_samples, 0, num_samples], cmap='viridis')
+    ax.xaxis.set_major_locator(ticker.FixedLocator(ticks))
+    ax.xaxis.set_major_formatter(ticker.FixedFormatter(labels))
+    ax.yaxis.set_major_locator(ticker.FixedLocator(ticks))
+    ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
+    plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='similarity')
+    if directory:
+        plt.savefig(directory+'/similarity.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
 def store_result(X, Y, score, params):
@@ -666,8 +711,8 @@ def experiment(wInp=3500, wRes=50,
         plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=plots_dir)
         plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
         plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
+        plot_similarity(X, Y, modulations, directory=plots_dir)
     # Measure reservoir perfomance
-    X = list(map(lambda x: x.T.flatten(), X))
     s = score(X, Y, len(modulations))
     if store:
         params = {'wInp': wInp, 'wRes': wRes, 'DoC': DoC}
