@@ -559,7 +559,8 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(wInp=3500, wRes=50, DoC=2, 
+def experiment(wInp=3500, wRes=50, 
+    pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
     N=200, tau=20, Ngx=10, Ngy=20, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
@@ -575,6 +576,16 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     
     wRes : float
         weight of the reservoir synapsis
+
+    pIR : float
+        probability of connection for the input neurons
+
+    pInh : float
+        probability that a reservoir neuron is inhibitory
+
+    AoC : list
+        list of probability amplitudes for the connections between
+        reservoir neurons ([ex-ex, ex-inh, inh-inh])
 
     N : int
         number of neurons in the reservoir
@@ -631,9 +642,6 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     """
     start = time.perf_counter()
     print("- running with: wInp={}, wRes={}, DoC={}".format(wRes, wInp, DoC))
-    pIR = 0.3
-    pInh = 0.2
-    AoC = [1.0, 1.0, 1.0]#[0.3, 0.5, 0.1]
     connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
@@ -646,7 +654,7 @@ def experiment(wInp=3500, wRes=50, DoC=2,
     # Initialize network
     network = init_network(indices, times, connectivity, N, Itau, wRes, wInp)    
     # Run simulation
-    network.run(1000*ms, recompile=True)
+    network.run(duration, recompile=True)
     # Readout activity
     tot_num_samples = num_samples*len(modulations)
     X, bins, edges = readout(network['mRes'], ro_time, N, tot_num_samples, bin_size=5)
@@ -716,7 +724,8 @@ if __name__ == '__main__':
     print("\t - duration: {}s".format(duration))
 
     # Test the experiment function
-    score = experiment(wInp=3500, wRes=50, DoC=2,
+    score = experiment(wInp=3500, wRes=50, 
+        pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \

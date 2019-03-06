@@ -17,13 +17,11 @@ def generate_sample(freq, phase, plot=False, title=None):
         plot_sample(signal, time_stim, indices, times, title)
     return indices, times
 
-def test(wInp=3500, wRes=50, DoC=2, N=200, tau=20, Ngx=10, Ngy=20, \
+def test(wInp=3500, wRes=50, pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+        N=200, tau=20, Ngx=10, Ngy=20, \
         stretch_factor=None, duration=None, ro_time=None, num_samples=None, Y=None):
     start = time.perf_counter()
     print("- running with: wInp={}, wRes={}, DoC={}".format(wInp, wRes, DoC))
-    pIR = 0.3
-    pInh = 0.2
-    AoC = [0.3, 0.5, 0.1]
     connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
@@ -100,5 +98,5 @@ for (i, p) in enumerate(phases):
     to = duration*(i+1)
     Y.append(i)
 
-test(wRes=100, DoC=4, stretch_factor=stretch_factor, \
-    duration=to, ro_time=duration, num_samples=len(phases), Y=Y)
+test(wRes=50, pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, 
+    stretch_factor=stretch_factor, duration=to, ro_time=duration, num_samples=len(phases), Y=Y)
