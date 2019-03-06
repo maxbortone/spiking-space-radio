@@ -8,7 +8,7 @@ from datetime import datetime
 from tqdm import tqdm
 from utils.dataset import *
 from utils.reservoir import getTauCurrent
-from brian2 import pA, ms, us, SpikeMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
+from brian2 import pA, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
 from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
 from teili.models.neuron_models import DPI
@@ -206,10 +206,13 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wRes, wInp):
     sInpRes.connect(i=connectivity['inp_res']['i'], j=connectivity['inp_res']['j'])
     sInpRes.weight = wInp
     mRes = SpikeMonitor(gRes, name='mRes')
+    recorded_synapsis = np.random.randint(0, high=len(connectivity['res_res']['i']), size=10)
+    smRes = StateMonitor(sResRes, ['Ie_syn', 'Ii_syn'], name='smRes', record=recorded_synapsis)
     components['layers']['gRes'] = gRes
     components['synapsis']['sInpRes'] = sInpRes
     components['synapsis']['sResRes'] = sResRes
     components['monitors']['mRes'] = mRes
+    components['monitors']['smRes'] = smRes
     return components
 
 def init_network(indices, times, connectivity, N, Itau, wRes, wInp):
@@ -484,7 +487,7 @@ def plot_network(network, N, weights, directory=None):
     ax3.yaxis.set_major_locator(ticker.MultipleLocator(25))
     ax3.set_title('Reservoir')
     if directory:
-        plt.savefig(directory+'/network_plot.pdf', bbox_inches='tight')
+        plt.savefig(directory+'/network.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
 def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
@@ -539,7 +542,7 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
     ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
     plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='weight')
     if directory:
-        plt.savefig(directory+'/weights_plot.pdf', bbox_inches='tight')
+        plt.savefig(directory+'/weights.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
 def plot_similarity(X, Y, modulations, directory=None):
@@ -581,6 +584,20 @@ def plot_similarity(X, Y, modulations, directory=None):
     plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='similarity')
     if directory:
         plt.savefig(directory+'/similarity.pdf', bbox_inches='tight')
+        plt.close(fig=fig)
+
+def plot_currents(monitor, connectivity, directory=None):
+    recorded_synapsis = monitor.record
+    print("Synapse: ", recorded_synapsis)
+    fig = plt.figure()
+    grd = grs.GridSpec(len(recorded_synapsis), 1, wspace=0.0, hspace=0.0)
+    for i in range(len(recorded_synapsis)):
+        ax = plt.Subplot(fig, grd[i])
+        ax.plot(monitor.t/ms, monitor.Ie_syn[i], color='red', linestyle='solid', label="Ie_syn")
+        ax.plot(monitor.t/ms, monitor.Ii_syn[i], color='blue', linestyle='dashed', label="Ii_syn")
+        fig.add_subplot(ax)
+    if directory:
+        plt.savefig(directory+'/currents.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
 def store_result(X, Y, score, params):
@@ -721,6 +738,7 @@ def experiment(wInp=3500, wRes=50,
         plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
         plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
         plot_similarity(X, Y, modulations, directory=plots_dir)
+        plot_currents(network['smRes'], connectivity, directory=plots_dir)
     # Measure reservoir perfomance
     s = score(X, Y, len(modulations))
     if store:
@@ -781,7 +799,7 @@ if __name__ == '__main__':
     score = experiment(wInp=3500, wRes=50, 
         pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
         N=200, tau=20, Ngx=10, Ngy=20, \
-        indices=indices, times=times, stretch_factor=stretch_factor, duration=stimulation+pause, ro_time=stimulation+pause, \
+        indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
         plot=True, store=False)
     print(score)
