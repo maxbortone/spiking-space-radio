@@ -4,6 +4,7 @@
 __pycache__
 data/
 results/
+experiments/
 teili/
 *.json
 *_standalone/
