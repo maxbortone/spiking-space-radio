@@ -19,7 +19,7 @@ print("- Importing dataset")
 settings = {
     'snr': 18,
     'modulations': ['8PSK', 'BPSK', 'QPSK'],
-    'num_samples': 2,
+    'num_samples': 20,
     'time_sample': np.arange(128),
     'thrup': 0.01,
     'thrdn': 0.01,
@@ -73,7 +73,7 @@ plot_flags = {
 
 # Define Bayesian optmization process
 params = {
-    'scale_wRes': 1.0,
+    'scale_wRes': 10.0,
     'pIR': 0.3,
     'pInh': 0.2,
     'AoC': [1.0, 1.0, 1.0],
@@ -134,8 +134,8 @@ optimizer.subscribe(Events.OPTMIZATION_STEP, logger)
 print("- Starting optimization")
 start = time.perf_counter()
 optimizer.maximize(
-    init_points=1,
-    n_iter=2,
+    init_points=2,
+    n_iter=25,
 )
 
 # Print results
@@ -144,7 +144,7 @@ print("- Finished! Best solution: ")
 print("\t - score: {}".format(best['target']))
 for (key, value) in best['params'].items():
     print("\t - {}: {}".format(key, value))
-s = 'wGen{}wInp{}wRes{}'.format(best['params']['wGen'], best['params']['wInp'], best['params']['loc_wRes'])
+s = 'wGen{}wInp{}loc_wRes{}'.format(best['params']['wGen'], best['params']['wInp'], best['params']['loc_wRes'])
 uid = hashlib.md5(s.encode('utf-8')).hexdigest()
 print("\t - uid: {}".format(uid))
 
