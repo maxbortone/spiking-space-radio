@@ -3,7 +3,10 @@ import os, shutil
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as grs
+import matplotlib.colors as clr
+import matplotlib.cm as cmx
 import matplotlib.ticker as ticker
+from mpl_toolkits import mplot3d
 import multiprocessing as mp
 from datetime import datetime
 from tqdm import tqdm
@@ -22,23 +25,23 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 
 def _pAB(a, b, AoC, DoC):
-    if a[2]==1 and b[2]==1:
+    if a[3]==1 and b[3]==1:
         C = AoC[0]
-    elif (a[2]==1 and b[2]==-1) or (a[2]==-1 and b[2]==1):
+    elif (a[3]==1 and b[3]==-1) or (a[3]==-1 and b[3]==1):
         C = AoC[1]
-    elif a[2]==-1 and b[2]==-1:
+    elif a[3]==-1 and b[3]==-1:
         C = AoC[2]
-    return C*np.exp(-1*np.linalg.norm(a-b)/DoC**2)
+    return C*np.exp(-1*(np.linalg.norm(a[:3]-b[:3])/DoC)**2)
 
-def _wAB(a, b, loc, scale, types):
-    if a[2]==-1 and b[2]==1:
+def _wAB(a, b, loc, scale):
+    if a[3]==-1 and b[3]==1:
         w = -1
     else:
         w = 1
     w = w*np.random.normal(loc=loc, scale=scale)
     return w
 
-def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes):
+def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes):
     """
     Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
@@ -66,6 +69,9 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes):
     Ngy : int
         number of reservoir neurons in the y-axis of the grid
 
+    Ngz : int
+        number of reservoir neurons in the z-axis of the grid
+
     AoC : list
         list of probability amplitudes for the connections between
         reservoir neurons ([ex-ex, ex-inh, inh-inh])
@@ -86,31 +92,33 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes):
         i and j indices to be used in the connect method
         of the synapse object in Brian2
     """
-    if Ngx*Ngy!=N: 
+    if Ngx*Ngy*Ngz!=N: 
         raise Exception("Reservoir grid dimensions do not coincide with number of neurons.")
-    # organize neurons on grid
-    reservoir = np.arange(N)
-    grid = reservoir.reshape((Ngx, Ngy))
-    # define type of each neuron
+    # set reservoir neurons and define type of each
+    neurons = np.arange(N)    
     types = np.random.choice([-1, 1], size=N, p=[pInh, 1-pInh])
+    reservoir = np.array(list(zip(neurons, types)))
+    # organize neurons on grid    
+    grid = reservoir.reshape((Ngx, Ngy, Ngz, -1))
     # connect reservoir neurons
     Cres = [[], []]
     Wres = []
-    for n in reservoir:
-        a = np.array(list(zip(*np.where(grid==n)))[0])
-        a = np.append(a, types[n])
+    for n in neurons:
+        a = np.array(list(zip(*np.where(grid[:,:,:,0]==n)))[0])
+        a = np.append(a, grid[a[0], a[1], a[2], 1])
         for x in range(Ngx):
             for y in range(Ngy):
-                b = np.array([x, y, types[grid[x, y]]])
-                p = _pAB(a, b, AoC, DoC)
-                r = np.random.uniform()
-                if r<p:
-                    Cres[0].append(n)
-                    Cres[1].append(grid[x, y])
-                    Wres.append(_wAB(a, b, loc_wRes, scale_wRes, types))
+                for z in range(Ngz):
+                    b = np.array([x, y, z, grid[x, y, z, 1]])
+                    p = _pAB(a, b, AoC, DoC)
+                    r = np.random.uniform()
+                    if r<p:
+                        Cres[0].append(n)
+                        Cres[1].append(grid[x, y, z, 0])
+                        Wres.append(_wAB(a, b, loc_wRes, scale_wRes))
     # connect input to reservoir
     Cin = [[], []]
-    for n in reservoir:
+    for n in neurons:
         r = np.random.uniform()
         if r<pIR:
             Cin[1].append(n)
@@ -129,8 +137,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes):
             'j': np.array(Cres[1]),
             'w': np.array(Wres)
         },
-        'grid': grid,
-        'types': types
+        'grid': grid
     }
     return connectivity
 
@@ -556,6 +563,69 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
         plt.savefig(directory+'/weights.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
+def plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=None):
+    """
+    Plot the network weights for each neuron
+
+    Parameters
+    ----------
+    network : TeiliNetwork
+        instance of the network with all the commponents
+
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
+
+    N : int
+        number of neurons in the reservoir
+
+    Ngx : int
+        number of reservoir neurons in the x-axis of the grid
+
+    Ngy : int
+        number of reservoir neurons in the y-axis of the grid
+
+    Ngz : int
+        number of reservoir neurons in the z-axis of the grid
+
+    directory : string
+        path to the folder into which the plot should be saved
+    """
+    source = connectivity['res_res']['i']
+    target = connectivity['res_res']['j']
+    weight = connectivity['res_res']['w']
+    grid = connectivity['grid']
+    fig = plt.figure()
+    norm1  = clr.Normalize(vmin=weight.min(), vmax=weight.max())
+    smap1 = cmx.ScalarMappable(norm=norm1, cmap='viridis')
+    norm2  = clr.Normalize(vmin=0, vmax=9)
+    smap2 = cmx.ScalarMappable(norm=norm2, cmap='tab10')
+    mx, my, mz = np.meshgrid(np.arange(Ngx), np.arange(Ngy), np.arange(Ngz))
+    os.makedirs(directory+'/weights')
+    for n in range(N):
+        ax = plt.axes(projection='3d')
+        sx, sy, sz = tuple(zip(*np.where(grid[:,:,:,0]==n)))[0]
+        t = target[np.where(source==n)[0]]
+        c = np.array(list(map(lambda m: tuple(zip(*np.where(grid[:,:,:,0]==m)))[0], t)))
+        w = weight[np.where(source==n)[0]]
+        colors = np.zeros((Ngx, Ngy, Ngz))
+        exc = np.array(list(zip(*np.where(grid[:,:,:,1]==1))))
+        inh = np.array(list(zip(*np.where(grid[:,:,:,1]==-1))))
+        colors[exc[:,0], exc[:,1], exc[:,2]] = 3
+        colors[inh[:,0], inh[:,1], inh[:,2]] = 0
+        colors[sx, sy, sz] = 2
+        for i in range(len(t)):
+            ax.plot3D([sy, c[i][1]], [sx, c[i][0]], [sz, c[i][2]], color=smap1.to_rgba(w[i]))
+        ax.text(sy, sx, sz, "{}-{}".format(grid[sx, sy, sz, 0], 'e' if grid[sx, sy, sz, 1]==1 else 'i' ), color='k')
+        ax.scatter3D(mx, my, mz, c=smap2.to_rgba(colors.flatten()))
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.set_zlabel("z")
+        if directory:
+            plt.savefig(directory+'/weights/weights_n{}.pdf'.format(n), bbox_inches='tight')
+            plt.close(fig=fig)
+
 def plot_similarity(X, Y, modulations, directory=None):
     """
     Plot the cosine similarity matrix between the reservoir 
@@ -659,7 +729,7 @@ def store_result(X, Y, score, params):
 # Define experiment
 def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
     pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
-    N=200, tau=20, Ngx=10, Ngy=20, \
+    N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
     plot=False, store=False, title=None, exp_dir=None, remove_device=False):
@@ -703,6 +773,9 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
 
     Ngy : int
         number of reservoir neurons in the y-axis of the grid
+
+    Ngz : int
+        number of reservoir neurons in the z-axis of the grid
 
     indices : list
         spike generator neuron indices
@@ -760,7 +833,7 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
     print("- running with: wGen={}, wInp={}, loc_wRes={}, scale_wRes={}".format(wGen, wInp, loc_wRes, scale_wRes))
     # Setup connectivity of the network
     # and the neurons time constant
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes)
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     if title==None:
@@ -793,13 +866,13 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
         if plot['network']:
             plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
         if plot['weights']:
-            plot_weights(network, connectivity, N, Ngx, Ngy, directory=plots_dir)
+            plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=plots_dir)
         if plot['similarity']:
             plot_similarity(X, Y, modulations, directory=plots_dir)
         if plot['currents']:
             plot_currents(network['smRes'], connectivity, directory=plots_dir)
     # Measure reservoir perfomance
-    s = score(X, Y, len(modulations))
+    s = classify(X, Y)
     if store:
         # TODO: refactor params
         params = {'wInp': wInp, 'loc_wRes': loc_wRes, 'DoC': DoC}
@@ -860,7 +933,7 @@ if __name__ == '__main__':
 
     # Test the experiment function
     plot_flags = {
-        'raster': True,
+        'raster': False,
         'result': True,
         'network': True,
         'weights': True,
@@ -868,8 +941,8 @@ if __name__ == '__main__':
         'currents': False
     }
     score = experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
-        pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, \
-        N=200, tau=20, Ngx=10, Ngy=20, \
+        pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+        N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
         plot=plot_flags, store=False)
