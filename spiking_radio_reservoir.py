@@ -412,7 +412,7 @@ def plot_raster(monitor, directory=None):
         plt.savefig(directory+'/raster_plot.pdf')
         plt.close(fig=fig)
 
-def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=None):
+def plot_result(X, Y, bins, edges, modulations, snr, directory=None):
     """
     Plot the readout activity for each sample
 
@@ -438,14 +438,14 @@ def plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=
     snr : float
         signal-to-noise level of the input stimulus
 
-    tot_num_samples : int
-        total number of samples per modulation class
-
     directory : string
         path to the folder into which the plot should be saved
     """
-    for i in range(tot_num_samples):
-        sid = i-Y[i]*num_samples
+    num_samples = len(X)
+    num_classes = len(np.unique(Y))
+    num_samples_per_class = int(num_samples/num_classes)
+    for i in range(num_samples):
+        sid = i%num_samples_per_class
         fig= plt.figure()
         x = X[i].reshape((bins[1], bins[0]))
         plt.imshow(x, interpolation='nearest', origin='low', aspect='auto', \
@@ -862,7 +862,7 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
         if plot['raster']:
             plot_raster(network['mRes'], plots_dir)
         if plot['result']:
-            plot_result(X, Y, bins, edges, modulations, snr, tot_num_samples, directory=plots_dir)
+            plot_result(X, Y, bins, edges, modulations, snr, directory=plots_dir)
         if plot['network']:
             plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
         if plot['weights']:
