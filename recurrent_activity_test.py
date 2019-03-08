@@ -1,4 +1,5 @@
 from spiking_radio_reservoir import *
+from utils.modulator import AsynchronousDeltaModulator
 from utils.plotting import plot_sample
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
@@ -18,11 +19,11 @@ def generate_sample(freq, phase, plot=False, title=None):
     return indices, times
 
 def test(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
-        N=200, tau=20, Ngx=10, Ngy=20, \
-        stretch_factor=None, duration=None, ro_time=None, num_samples=None, Y=None):
+        N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
+        stretch_factor=None, duration=None, ro_time=None, phases=None, num_samples=None, Y=None):
     start = time.perf_counter()
     print("- running with: wInp={}, loc_wRes={}, scale_wRes={}".format(wInp, loc_wRes, scale_wRes))
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, AoC, DoC, loc_wRes, scale_wRes)
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     title = 'recact_{}'.format(os.getpid())
@@ -41,26 +42,9 @@ def test(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, Ao
     plots_dir = directory+'/plots'
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
-    for i in range(num_samples):
-        fig= plt.figure()
-        plt.imshow(X[i].T, interpolation='nearest', origin='low', aspect='auto', \
-           extent=[0, bins[0], 0, bins[1]], cmap='viridis')
-        plt.title(r"$\phi = {}\pi/4$".format(i))
-        plt.xlabel('vector element')
-        plt.ylabel('neuron index')
-        plt.savefig(plots_dir+'/phi_{}pi4.pdf'.format(i))
-        plt.close(fig=fig)
+    plot_result(X, Y, bins, edges, phases, 18, num_samples, directory=plots_dir)
     plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
-    # Measure reservoir perfomance
-    X = list(map(lambda x: x.T.flatten(), X))
-    S = cosine_similarity(X)
-    fig = plt.figure()
-    plt.imshow(S.T, interpolation='nearest', origin='low', aspect='auto', \
-           extent=[0, num_samples, 0, num_samples], cmap='viridis')
-    plt.colorbar()
-    plt.title(title)
-    plt.savefig(plots_dir+'/similarity.pdf')
-    plt.close(fig=fig)
+    plot_similarity(X, Y, phases, directory=plots_dir)
     print("- experiment took {} [s]".format(time.perf_counter()-start))
     return
 
@@ -98,5 +82,5 @@ for (i, p) in enumerate(phases):
     to = duration*(i+1)
     Y.append(i)
 
-test(loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, AoC=[1.0, 1.0, 1.0], DoC=2, 
-    stretch_factor=stretch_factor, duration=to, ro_time=duration, num_samples=len(phases), Y=Y)
+test(loc_wRes=800, scale_wRes=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, 
+    stretch_factor=stretch_factor, duration=to, ro_time=duration, phases=phases, num_samples=len(phases), Y=Y)
