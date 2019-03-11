@@ -64,7 +64,7 @@ if not os.path.exists(exp_dir):
 # Plots
 plot_flags = {
     'raster': False,
-    'result': False,
+    'result': True,
     'network': False,
     'weights': False,
     'similarity': True,
@@ -73,33 +73,36 @@ plot_flags = {
 
 # Define Bayesian optmization process
 params = {
-    'scale_wRes': 10.0,
-    'pIR': 0.3,
+    'pIR': 0.1,
     'pInh': 0.2,
-    'AoC': [1.0, 1.0, 1.0],
+    'AoC': [0.3, 0.2, 0.5, 0.1],
     'DoC': 2,
     'N': 200,
     'tau': 20,
-    'Ngx': 10,
-    'Ngy': 20,
+    'Ngx': 5,
+    'Ngy': 5,
+    'Ngz': 8,
 }
 pbounds = {
     #'N': (50, 200),            # number of neurons   
     #'tau': (20, 200),          # DPI time constant [ms]
     #'pRR': (0.3, 1.0)          # probability of connection
-    'wGen': (50, 5000),         # units of baseweight
-    'wInp': (50, 5000),         # units of baseweight
-    'loc_wRes': (50, 1000),         # units of baseweight
+    #'wGen': (50, 5000),         # units of baseweight
+    #'wInp': (50, 5000),         # units of baseweight
+    'loc_wResE': (1000, 1200),         # units of baseweight
+    'scale_wResE': (50, 100),         # units of baseweight
+    'loc_wResI': (1000, 1200),         # units of baseweight
+    'scale_wResI': (50, 100),         # units of baseweight    
     #'DoC': ()                  # density of connection   
 }
 
-def bo_process(wGen=3500, wInp=3500, loc_wRes=50):
-    s = 'wGen{}wInp{}loc_wRes{}'.format(wGen, wInp, loc_wRes)
+def bo_process(loc_wResE=1000, scale_wResE=50, loc_wResI=1000, scale_wResI=50):
+    s = 'loc_wResE{}scale_wResE{}'.format(loc_wResE, scale_wResE)
     uid = hashlib.md5(s.encode('utf-8')).hexdigest()
     title = '{}_{}'.format(exp_name, uid)
-    return experiment(wGen=wGen, wInp=wInp, loc_wRes=loc_wRes, scale_wRes=params['scale_wRes'], 
+    return experiment(wGen=3500, wInp=3500, loc_wResE=loc_wResE, scale_wResE=scale_wResE, loc_wResI=loc_wResI, scale_wResI=scale_wResI,
         pIR=params['pIR'], pInh=params['pInh'], AoC=params['AoC'], DoC=params['DoC'], \
-        N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
+        N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], Ngz=params['Ngz'], \
         indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
         duration=duration, ro_time=stimulation+settings['pause']*ms, \
         modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
@@ -135,7 +138,8 @@ print("- Starting optimization")
 start = time.perf_counter()
 optimizer.maximize(
     init_points=2,
-    n_iter=25,
+    n_iter=10,
+    kappa=3
 )
 
 # Print results
@@ -144,7 +148,7 @@ print("- Finished! Best solution: ")
 print("\t - score: {}".format(best['target']))
 for (key, value) in best['params'].items():
     print("\t - {}: {}".format(key, value))
-s = 'wGen{}wInp{}loc_wRes{}'.format(best['params']['wGen'], best['params']['wInp'], best['params']['loc_wRes'])
+s = 'loc_wResE{}scale_wResE{}'.format(best['params']['loc_wResE'], best['params']['scale_wResE'])
 uid = hashlib.md5(s.encode('utf-8')).hexdigest()
 print("\t - uid: {}".format(uid))
 

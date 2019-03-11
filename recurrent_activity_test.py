@@ -18,12 +18,14 @@ def generate_sample(freq, phase, plot=False, title=None):
         plot_sample(signal, time_stim, indices, times, title)
     return indices, times
 
-def test(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+def test(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50, scale_wResI=10, \
+        pIR=0.3, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
         N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
         stretch_factor=None, duration=None, ro_time=None, phases=None, num_samples=None, Y=None):
     start = time.perf_counter()
-    print("- running with: wInp={}, loc_wRes={}, scale_wRes={}".format(wInp, loc_wRes, scale_wRes))
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes)
+    print("- running with: wInp={}, loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}"
+        .format(wInp, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     title = 'recact_{}'.format(os.getpid())
@@ -42,7 +44,7 @@ def test(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, pIR=0.3, pInh=0.2, Ao
     plots_dir = directory+'/plots'
     if not os.path.exists(plots_dir):
         os.makedirs(plots_dir)
-    plot_result(X, Y, bins, edges, phases, 18, num_samples, directory=plots_dir)
+    plot_result(X, Y, bins, edges, phases, 18, directory=plots_dir)
     plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
     plot_similarity(X, Y, phases, directory=plots_dir)
     print("- experiment took {} [s]".format(time.perf_counter()-start))
@@ -82,5 +84,5 @@ for (i, p) in enumerate(phases):
     to = duration*(i+1)
     Y.append(i)
 
-test(loc_wRes=800, scale_wRes=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, 
+test(loc_wResE=800, scale_wResE=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, 
     stretch_factor=stretch_factor, duration=to, ro_time=duration, phases=phases, num_samples=len(phases), Y=Y)

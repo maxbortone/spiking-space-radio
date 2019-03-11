@@ -27,21 +27,26 @@ from sklearn.metrics.pairwise import cosine_similarity
 def _pAB(a, b, AoC, DoC):
     if a[3]==1 and b[3]==1:
         C = AoC[0]
-    elif (a[3]==1 and b[3]==-1) or (a[3]==-1 and b[3]==1):
+    elif a[3]==1 and b[3]==-1:
         C = AoC[1]
-    elif a[3]==-1 and b[3]==-1:
+    elif a[3]==-1 and b[3]==1:
         C = AoC[2]
+    elif a[3]==-1 and b[3]==-1:
+        C = AoC[3]
     return C*np.exp(-1*(np.linalg.norm(a[:3]-b[:3])/DoC)**2)
 
-def _wAB(a, b, loc, scale):
+def _wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI):
     if a[3]==-1 and b[3]==1:
-        w = -1
-    else:
         w = 1
-    w = w*np.random.normal(loc=loc, scale=scale)
+        while w>0:
+            w = -1*np.random.normal(loc_wResI, scale_wResI)
+    else:
+        w = -1
+        while w<0:
+            w = np.random.normal(loc_wResE, scale_wResE)
     return w
 
-def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes):
+def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI, rebalance=False):
     """
     Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
@@ -74,16 +79,26 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wR
 
     AoC : list
         list of probability amplitudes for the connections between
-        reservoir neurons ([ex-ex, ex-inh, inh-inh])
+        reservoir neurons ([ex-ex, ex-inh, inh-ex, inh-inh])
     
     DoC : float
         density of connections between reservoir neurons
 
-    loc_wRes : float
-        mean value of the reservoir weights distribution
+    loc_wResE : float
+        mean value of the reservoir excitatory weights distribution
 
-    scale_wRes : float
-        standard deviation of the reservoir weights distribution
+    scale_wResE : float
+        standard deviation of the reservoir excitatory weights distribution
+
+    loc_wResI : float
+        mean value of the reservoir inhibitory weights distribution
+
+    scale_wResI : float
+        standard deviation of the reservoir inhibitory weights distribution
+
+    rebalance : bool
+        wheter the reservoir weights should be adjusted to satisfy the
+        input balance condition for each neuron
 
     Returns
     -------
@@ -115,7 +130,21 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wR
                     if r<p:
                         Cres[0].append(n)
                         Cres[1].append(grid[x, y, z, 0])
-                        Wres.append(_wAB(a, b, loc_wRes, scale_wRes))
+                        Wres.append(_wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
+    # rebalance weights if needed
+    if rebalance:
+        Wres_new = np.zeros((N, N))
+        Wres_new[Cres[0], Cres[1]] = Wres
+        for i in neurons:
+            I = np.where(Wres_new[:, i]<0)[0]
+            if len(I)>0:
+                delta = -np.sum(Wres_new[:,i])/len(I)
+                Wres_new[I, i] += delta
+            E = np.where(Wres_new[:, i]>0)[0]
+            if len(E)>0:
+                delta = -np.sum(Wres_new[:,i])/len(E)
+                Wres_new[E, i] += delta
+        Wres = Wres_new.flatten() 
     # connect input to reservoir
     Cin = [[], []]
     for n in neurons:
@@ -727,8 +756,8 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
-    pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50, scale_wResI=10, 
+    pIR=0.3, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
     N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
@@ -745,11 +774,17 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
     wInp : float
         weight of the input synapsis
     
-    loc_wRes : float
-        mean value of the reservoir weights distribution
+    loc_wResE : float
+        mean value of the reservoir excitatory weights distribution
 
-    scale_wRes : float
-        standard deviation of the reservoir weights distribution
+    scale_wResE : float
+        standard deviation of the reservoir excitatory weights distribution
+
+    loc_wResI : float
+        mean value of the reservoir inhibitory weights distribution
+
+    scale_wResI : float
+        standard deviation of the reservoir inhibitory weights distribution
 
     pIR : float
         probability of connection for the input neurons
@@ -759,7 +794,7 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
 
     AoC : list
         list of probability amplitudes for the connections between
-        reservoir neurons ([ex-ex, ex-inh, inh-inh])
+        reservoir neurons ([ex-ex, ex-inh, inh-ex, inh-inh])
 
     N : int
         number of neurons in the reservoir
@@ -829,11 +864,13 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
     score : float
         performance metric of the reservoir (higher is better)      
     """
+    params = dict(locals())
     start = time.perf_counter()
-    print("- running with: wGen={}, wInp={}, loc_wRes={}, scale_wRes={}".format(wGen, wInp, loc_wRes, scale_wRes))
+    print("- running with: wGen={}, wInp={}, loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}".format(wGen, wInp, \
+        loc_wResE, scale_wResE, loc_wResI, scale_wResI))
     # Setup connectivity of the network
     # and the neurons time constant
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wRes, scale_wRes)
+    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     if title==None:
@@ -874,8 +911,6 @@ def experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10,
     # Measure reservoir perfomance
     s = classify(X, Y)
     if store:
-        # TODO: refactor params
-        params = {'wInp': wInp, 'loc_wRes': loc_wRes, 'DoC': DoC}
         store_result(X, Y, s, params)
     # Remove device folder
     if remove_device:
@@ -897,7 +932,7 @@ if __name__ == '__main__':
     modulations = [
         '8PSK', 'BPSK', 'QPSK'
     ]
-    num_samples = 5
+    num_samples = 20
     tot_num_samples = num_samples*len(modulations)
     dataset = load_dataset('./data/radioML/RML2016.10a_dict.pkl', snr=snr, normalize=True)
     # Define delta modulators
@@ -940,8 +975,8 @@ if __name__ == '__main__':
         'similarity': True,
         'currents': False
     }
-    score = experiment(wGen=3500, wInp=3500, loc_wRes=50, scale_wRes=10, 
-        pIR=0.3, pInh=0.2, AoC=[0.3, 0.5, 0.1], DoC=2, \
+    score = experiment(wGen=3500, wInp=3500, loc_wResE=1050, scale_wResE=105, loc_wResI=1050, scale_wResI=105, 
+        pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
         N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
         indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
