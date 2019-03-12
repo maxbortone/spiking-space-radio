@@ -131,20 +131,25 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
                         Cres[0].append(n)
                         Cres[1].append(grid[x, y, z, 0])
                         Wres.append(_wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
+    Wres = np.array(Wres)
     # rebalance weights if needed
     if rebalance:
+        epsilon = 1e-3
         Wres_new = np.zeros((N, N))
         Wres_new[Cres[0], Cres[1]] = Wres
-        for i in neurons:
-            I = np.where(Wres_new[:, i]<0)[0]
+        for n in neurons:
+            I = np.where(Wres_new[:, n]<0)[0]
             if len(I)>0:
-                delta = -np.sum(Wres_new[:,i])/len(I)
-                Wres_new[I, i] += delta
-            E = np.where(Wres_new[:, i]>0)[0]
+                delta = -np.sum(Wres_new[:, n])/len(I)
+                Wres_new[I, n] += delta+epsilon
+            E = np.where(Wres_new[:, n]>0)[0]
             if len(E)>0:
-                delta = -np.sum(Wres_new[:,i])/len(E)
-                Wres_new[E, i] += delta
-        Wres = Wres_new.flatten() 
+                delta = -np.sum(Wres_new[:, n])/len(E)
+                Wres_new[E, n] += delta+epsilon
+        if len(Wres_new.nonzero()[0]) != len(Wres.nonzero()[0]):
+            raise Exception("Rebalancing error.")
+        else:
+            Wres = Wres_new.flatten() 
     # connect input to reservoir
     Cin = [[], []]
     for n in neurons:
@@ -164,7 +169,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
         'res_res': {
             'i': np.array(Cres[0]),
             'j': np.array(Cres[1]),
-            'w': np.array(Wres)
+            'w': Wres
         },
         'grid': grid
     }
