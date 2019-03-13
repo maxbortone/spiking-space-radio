@@ -24,7 +24,7 @@ from sklearn.metrics import log_loss, silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
 
 
-def _pAB(a, b, AoC, DoC):
+def _schliebs_pAB(a, b, AoC, DoC):
     if a[3]==1 and b[3]==1:
         C = AoC[0]
     elif a[3]==1 and b[3]==-1:
@@ -33,27 +33,43 @@ def _pAB(a, b, AoC, DoC):
         C = AoC[2]
     elif a[3]==-1 and b[3]==-1:
         C = AoC[3]
-    return C*np.exp(-1*(np.linalg.norm(a[:3]-b[:3])/DoC)**2)
+    return C*np.exp(-0.5*(np.linalg.norm(a[:3]-b[:3])/DoC)**2)
 
-def _wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI):
+def _schliebs_coords(n, grid):
+    x = np.zeros(4, dtype=np.float)
+    c = np.array(list(zip(*np.where(grid[:,:,:,0]==n)))[0])
+    for (i, dim) in enumerate(grid.shape[:-1]):
+        x[i] = c[i]/dim
+    x[-1] = grid[c[0], c[1], c[2], 1]
+    return x
+
+def _scliebs_norm(a, neurons, AoC, DoC, grid):
+    norm = 0
+    for n in neurons:
+        b = _schliebs_coords(n, grid)
+        norm += _schliebs_pAB(a, b, AoC, DoC)
+    return norm
+
+def _schliebs_wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI):
     if a[3]==-1 and b[3]==1:
         w = 1
         while w>0:
-            w = -1*np.random.normal(loc_wResI, scale_wResI)
+            w = np.random.normal(loc_wResI, scale_wResI)
     else:
         w = -1
         while w<0:
             w = np.random.normal(loc_wResE, scale_wResE)
     return w
 
-def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI, rebalance=False):
+def setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, \
+    loc_wResE, scale_wResE, loc_wResI, scale_wResI, rebalance=False):
     """
     Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
     as folows:
         - the reservoir is split in 2 groups
         - each input neuron projects to one of the groups
-        - the neurons in the reservoir are arranged on a 2D-grid
+        - the neurons in the reservoir are arranged on a 3D-grid
         - the probability of connection between reservoir neurons
           is dependent on the distance between the neurons
 
@@ -84,13 +100,13 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
     DoC : float
         density of connections between reservoir neurons
 
-    loc_wResE : float
+    loc_wResE : float (positive)
         mean value of the reservoir excitatory weights distribution
 
     scale_wResE : float
         standard deviation of the reservoir excitatory weights distribution
 
-    loc_wResI : float
+    loc_wResI : float (negative)
         mean value of the reservoir inhibitory weights distribution
 
     scale_wResI : float
@@ -106,6 +122,12 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
         contains the two connectivity matrices as
         i and j indices to be used in the connect method
         of the synapse object in Brian2
+
+    Notes
+    -----
+    The method is inspired by the paper:
+    "Reservoir-Based Evolving Spiking Neural Network
+    for Spatio-temporal Pattern Recognition" - Schliebs et al. 2011
     """
     if Ngx*Ngy*Ngz!=N: 
         raise Exception("Reservoir grid dimensions do not coincide with number of neurons.")
@@ -119,18 +141,16 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
     Cres = [[], []]
     Wres = []
     for n in neurons:
-        a = np.array(list(zip(*np.where(grid[:,:,:,0]==n)))[0])
-        a = np.append(a, grid[a[0], a[1], a[2], 1])
-        for x in range(Ngx):
-            for y in range(Ngy):
-                for z in range(Ngz):
-                    b = np.array([x, y, z, grid[x, y, z, 1]])
-                    p = _pAB(a, b, AoC, DoC)
-                    r = np.random.uniform()
-                    if r<p:
-                        Cres[0].append(n)
-                        Cres[1].append(grid[x, y, z, 0])
-                        Wres.append(_wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
+        a = _schliebs_coords(n, grid)
+        norm = 1.0 #_norm(a, AoC, DoC, grid)
+        for m in neurons:
+            b = _schliebs_coords(m, grid)
+            p = _schliebs_pAB(a, b, AoC, DoC)/norm
+            r = np.random.uniform()
+            if r<p:
+                Cres[0].append(n)
+                Cres[1].append(m)
+                Wres.append(_schliebs_wAB(a, b, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
     Wres = np.array(Wres)
     # rebalance weights if needed
     if rebalance:
@@ -149,7 +169,7 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
         if len(Wres_new.nonzero()[0]) != len(Wres.nonzero()[0]):
             raise Exception("Rebalancing error.")
         else:
-            Wres = Wres_new.flatten() 
+            Wres = Wres_new[Wres_new.nonzero()].flatten() 
     # connect input to reservoir
     Cin = [[], []]
     for n in neurons:
@@ -172,6 +192,154 @@ def setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_w
             'w': Wres
         },
         'grid': grid
+    }
+    return connectivity
+
+def _hennequin_pAB(a, b, Ngx, Ngy, p_local, k, DoC):
+    l = list(zip(np.random.choice(np.arange(Ngx)/Ngx, size=3), np.random.choice(np.arange(Ngy)/Ngy, size=3)))
+    long_range_sum = 0
+    for i in range(k):
+        long_range_sum += np.exp(-0.5*(np.linalg.norm(a-l[i])/DoC)**2)
+    p = p_local*np.exp(-0.5*(np.linalg.norm(a-b)/DoC)**2)+(1-p_local)*long_range_sum/k
+    return p
+
+def _hennequin_coords(n, grid):
+    x = np.zeros(2, dtype=np.float)
+    c = np.array(list(zip(*np.where(grid==n)))[0])
+    for (i, dim) in enumerate(grid.shape[1:]):
+        x[i] = c[i+1]/dim
+    return x
+
+def _hennequin_norm(a, neurons, DoC, grid):
+    norm = 0
+    for n in neurons:
+        b = _hennequin_coords(n, grid)
+        norm += np.exp(-0.5*(np.linalg.norm(a-b)/DoC)**2)
+    return norm
+
+def _hennequin_wAB(ta, loc_wResE, scale_wResE, loc_wResI, scale_wResI):
+    if ta==-1:
+        w = 1
+        while w>0:
+            w = np.random.normal(loc_wResI, scale_wResI)
+    else:
+        w = -1
+        while w<0:
+            w = np.random.normal(loc_wResE, scale_wResE)
+    return w
+
+def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
+    loc_wResE, scale_wResE, loc_wResI, scale_wResI):
+    """
+    Setup connectivity matrices for the synapsis between
+    input layer and reservoir and those within the reservoir itself
+    as folows:
+        - the reservoir is split in 2  2D-grids of size (Ngx, Ngy):
+          one for excitatory neurons and one for inhibitory
+        - each input neuron projects to a subset of reservoir neurons
+        - both excitatory and inhibitory neurons can connect locally
+          and at long-range with a distance depedent probability
+
+    Parameters
+    ----------
+    N : int
+        number of neurons in the reservoir
+
+    pIR : float
+        probability of connection for the input neurons
+
+    Ngx : int
+        number of reservoir neurons in the x-axis of the grid
+
+    Ngy : int
+        number of reservoir neurons in the y-axis of the grid
+
+    pE_local : float
+        fraction of outgoing synapsis that project onto neurons
+        in a local neighborhood from excitatory neurons
+
+    pI_local : float
+        fraction of outgoing synapsis that project onto neurons
+        in a local neighborhood from inhibitory neurons
+
+    k : int
+        number of long-range synapsis
+    
+    DoC : float
+        density of connections between reservoir neurons
+
+    loc_wResE : float (positive)
+        mean value of the reservoir excitatory weights distribution
+
+    scale_wResE : float
+        standard deviation of the reservoir excitatory weights distribution
+
+    loc_wResI : float (negative)
+        mean value of the reservoir inhibitory weights distribution
+
+    scale_wResI : float
+        standard deviation of the reservoir inhibitory weights distribution
+
+    Returns
+    -------
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
+
+    Notes
+    -----
+    The method is inspired by the paper:
+    "Stability in spatially structured networks via local inhibition"
+    Hennequin et al. 2013
+    """
+    if 2*Ngx*Ngy!=N: 
+        raise Exception("Reservoir grid dimensions do not coincide with number of neurons.")
+    # se treservoir neurons and organize them on a grid
+    neurons = np.arange(N)
+    types = np.array([1 for i in range(Ngx*Ngy)] + [-1 for i in range(Ngx*Ngy)])
+    grid = neurons.reshape((2, Ngx, Ngy))
+    # connect reservoir neurons
+    Cres = [[], []]
+    Wres = []
+    for n in neurons:
+        a = _hennequin_coords(n, grid)
+        if n<int(N/2):
+            p_local = pE_local
+        else:
+            p_local = pI_local
+        norm = 1.0 #_hennequin_norm(a, neurons, DoC, grid)
+        for m in neurons:
+            b = _hennequin_coords(m, grid)
+            p = _hennequin_pAB(a, b, Ngx, Ngy, p_local, k, DoC)/norm
+            r = np.random.uniform()
+            if r<p:
+                Cres[0].append(n)
+                Cres[1].append(m)
+                Wres.append(_hennequin_wAB(types[n], loc_wResE, scale_wResE, loc_wResI, scale_wResI))
+    # connect input to reservoir
+    Cin = [[], []]
+    for n in neurons:
+        r = np.random.uniform()
+        if r<pIR:
+            Cin[1].append(n)
+            if n<int(N/2):
+                Cin[0].append(0)
+            else:
+                Cin[0].append(1)
+    # return connectivity and weights
+    connectivity = {
+        'inp_res': {
+            'i': np.array(Cin[0]),
+            'j': np.array(Cin[1])
+        },
+        'res_res': {
+            'i': np.array(Cres[0]),
+            'j': np.array(Cres[1]),
+            'w': np.array(Wres)
+        },
+        'grid': grid,
+        'types': types
     }
     return connectivity
 
@@ -441,7 +609,7 @@ def plot_raster(monitor, directory=None):
     fig = plt.figure()
     plt.scatter(monitor.t/ms, monitor.i, marker=',', s=2)
     plt.xlabel('time [ms]')
-    plt.ylabel('neuron index')
+    plt.ylabel('reservoir neuron')
     if directory:
         plt.savefig(directory+'/raster_plot.pdf')
         plt.close(fig=fig)
@@ -486,7 +654,7 @@ def plot_result(X, Y, bins, edges, modulations, snr, directory=None):
            extent=[0, bins[0], 0, bins[1]], cmap='viridis')
         plt.title('{} @ {} #{}'.format(modulations[Y[i]], snr, sid))
         plt.xlabel('vector element')
-        plt.ylabel('neuron index')
+        plt.ylabel('reservoir neuron')
         if directory:
             plt.savefig(directory+'/{}_{}_{}.pdf'.format(modulations[Y[i]], snr, sid), bbox_inches='tight')
             plt.close(fig=fig)
@@ -510,17 +678,17 @@ def plot_network(network, N, weights, directory=None):
     directory : string
         path to the folder into which the plot should be saved
     """
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3)
+    fig, (ax1, ax2) = plt.subplots(1, 2)
     ax1.scatter(network['sGenInp'].i, network['sGenInp'].j, c='k', marker='.')
-    ax1.set_xlabel('Source neuron index')
-    ax1.set_ylabel('Target neuron index')
+    ax1.set_xlabel('source neuron')
+    ax1.set_ylabel('target neuron')
     ax1.tick_params(direction='in')
     ax1.set_xticks([0, 1, 2, 3])
     ax1.set_xticklabels(['I.up', 'I.dn', 'Q.up', 'Q.dn'])
     ax1.set_yticks([0, 1])
     ax1.set_title('Generator')
     ax2.scatter(network['sInpRes'].i, network['sInpRes'].j, c='k', marker='.')
-    ax2.set_xlabel('Source neuron index')
+    ax2.set_xlabel('source neuron')
     ax2.set_xticks([0, 1])
     ax2.tick_params(direction='in')
     ax2.yaxis.tick_right()
@@ -528,23 +696,13 @@ def plot_network(network, N, weights, directory=None):
     ax2.yaxis.set_major_locator(ticker.MultipleLocator(25))
     ax2.set_yticklabels([])
     ax2.set_title('Input')
-    C = np.zeros((N, N))
-    C[network['sResRes'].i, network['sResRes'].j] = weights
-    ax3.imshow(C, interpolation='nearest', origin='low', aspect='auto', \
-                extent=[0, N, 0, N], cmap='viridis', vmin=weights.min(), vmax=weights.max())
-    ax3.set_xlabel('Source neuron index')
-    ax3.tick_params(direction='in')
-    ax3.yaxis.tick_right()
-    ax3.yaxis.set_label_position("right")
-    ax3.yaxis.set_major_locator(ticker.MultipleLocator(25))
-    ax3.set_title('Reservoir')
     if directory:
         plt.savefig(directory+'/network.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
-def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
+def plot_weights(network, connectivity, N, directory=None):
     """
-    Plot the network weights for each neuron
+    Plot the network weight matrix
 
     Parameters
     ----------
@@ -559,40 +717,20 @@ def plot_weights(network, connectivity, N, Ngx, Ngy, directory=None):
     N : int
         number of neurons in the reservoir
 
-    Ngx : int
-        number of reservoir neurons in the x-axis of the grid
-
-    Ngy : int
-        number of reservoir neurons in the y-axis of the grid
-
     directory : string
         path to the folder into which the plot should be saved
     """
-    source = connectivity['res_res']['i']
-    target = connectivity['res_res']['j']
-    weight = connectivity['res_res']['w']
-    types = connectivity['types']
-    grid = connectivity['grid']
-    fig = plt.figure()
-    grd = grs.GridSpec(Ngx, Ngy, wspace=0.0, hspace=0.0)
-    for n in range(N):
-        W = np.zeros((Ngx, Ngy))
-        t = target[np.where(source==n)[0]]
-        coords = np.array(list(map(lambda m: tuple(zip(*np.where(grid==m)))[0], t)))
-        W[coords[:, 0], coords[:, 1]] = weight[np.where(source==n)[0]]
-        ax = plt.Subplot(fig, grd[n])
-        im = ax.imshow(W.T, interpolation='nearest', origin='low', aspect='auto', \
-                extent=[0, Ngx, 0, Ngy], cmap='viridis', vmin=weight.min(), vmax=weight.max())
-        ax.set_yticks([])
-        ax.set_xticks([])
-        sx, sy = tuple(zip(*np.where(grid==n)))[0]
-        if types[n]==1:
-            ax.annotate("{}".format(n), xy=[sx, sy], fontsize=2, color='red')
-        else:
-            ax.annotate("{}".format(n), xy=[sx, sy], fontsize=2, color='white')
-        fig.add_subplot(ax)
+    W = np.zeros((N, N))
+    W[connectivity['res_res']['i'], connectivity['res_res']['j']] = connectivity['res_res']['w']
+    w_min = connectivity['res_res']['w'].min()
+    w_max = connectivity['res_res']['w'].max()
+    fig, ax = plt.subplots()
+    im = ax.imshow(W.T, interpolation='nearest', origin='low', aspect='auto', \
+                    extent=[0, N, 0, N], cmap='viridis', vmin=w_min, vmax=w_max)
     ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
     plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='weight')
+    ax.set_xlabel("source neuron")
+    ax.set_ylabel("target neuron")
     if directory:
         plt.savefig(directory+'/weights.pdf', bbox_inches='tight')
         plt.close(fig=fig)
@@ -630,7 +768,6 @@ def plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=None):
     target = connectivity['res_res']['j']
     weight = connectivity['res_res']['w']
     grid = connectivity['grid']
-    fig = plt.figure()
     norm1  = clr.Normalize(vmin=weight.min(), vmax=weight.max())
     smap1 = cmx.ScalarMappable(norm=norm1, cmap='viridis')
     norm2  = clr.Normalize(vmin=0, vmax=9)
@@ -638,6 +775,7 @@ def plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=None):
     mx, my, mz = np.meshgrid(np.arange(Ngx), np.arange(Ngy), np.arange(Ngz))
     os.makedirs(directory+'/weights')
     for n in range(N):
+        fig = plt.figure()
         ax = plt.axes(projection='3d')
         sx, sy, sz = tuple(zip(*np.where(grid[:,:,:,0]==n)))[0]
         t = target[np.where(source==n)[0]]
@@ -875,7 +1013,8 @@ def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50,
         loc_wResE, scale_wResE, loc_wResI, scale_wResI))
     # Setup connectivity of the network
     # and the neurons time constant
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    connectivity = setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    #connectivity = setup_hennequin_connectivity(N, pIR, Ngx, Ngy, 0.5, 1.0, 3, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     if title==None:
@@ -908,6 +1047,8 @@ def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50,
         if plot['network']:
             plot_network(network, N, connectivity['res_res']['w'], directory=plots_dir)
         if plot['weights']:
+            plot_weights(network, connectivity, N, directory=plots_dir)
+        if plot['weights3D']:
             plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=plots_dir)
         if plot['similarity']:
             plot_similarity(X, Y, modulations, directory=plots_dir)
@@ -977,13 +1118,14 @@ if __name__ == '__main__':
         'result': True,
         'network': True,
         'weights': True,
+        'weights3D': True,
         'similarity': True,
         'currents': False
     }
-    score = experiment(wGen=3500, wInp=3500, loc_wResE=1050, scale_wResE=105, loc_wResI=1050, scale_wResI=105, 
-        pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
+    score = experiment(wGen=3500, wInp=3500, loc_wResE=1.0, scale_wResE=0.5, loc_wResI=-1.0, scale_wResI=0.5, 
+        pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=0.2, \
         N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
-        indices=indices, times=times, stretch_factor=stretch_factor, duration=duration, ro_time=stimulation+pause, \
+        indices=indices, times=times, stretch_factor=stretch_factor, duration=stimulation+pause, ro_time=stimulation+pause, \
         modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
         plot=plot_flags, store=False)
     print(score)
