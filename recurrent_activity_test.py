@@ -25,7 +25,7 @@ def test(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50, scale
     start = time.perf_counter()
     print("- running with: wInp={}, loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}"
         .format(wInp, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
-    connectivity = setup_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    connectivity = setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     title = 'recact_{}'.format(os.getpid())
@@ -84,5 +84,5 @@ for (i, p) in enumerate(phases):
     to = duration*(i+1)
     Y.append(i)
 
-test(loc_wResE=800, scale_wResE=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, 
+test(loc_wResE=400, scale_wResE=100, loc_wResI=-1000, scale_wResI=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, 
     stretch_factor=stretch_factor, duration=to, ro_time=duration, phases=phases, num_samples=len(phases), Y=Y)

@@ -73,6 +73,8 @@ plot_flags = {
 
 # Define Bayesian optmization process
 params = {
+    'wGen': 3500,
+    'wInp': 3500,
     'pIR': 0.1,
     'pInh': 0.2,
     'AoC': [0.3, 0.2, 0.5, 0.1],
@@ -86,22 +88,24 @@ params = {
 pbounds = {
     #'N': (50, 200),            # number of neurons   
     #'tau': (20, 200),          # DPI time constant [ms]
-    #'pRR': (0.3, 1.0)          # probability of connection
     #'wGen': (50, 5000),         # units of baseweight
     #'wInp': (50, 5000),         # units of baseweight
     'loc_wResE': (1000, 1200),         # units of baseweight
     'scale_wResE': (50, 100),         # units of baseweight
-    'loc_wResI': (1000, 1200),         # units of baseweight
+    'loc_wResI': (-1200, -1000),         # units of baseweight
     'scale_wResI': (50, 100),         # units of baseweight    
     #'DoC': ()                  # density of connection   
 }
 
-def bo_process(loc_wResE=1000, scale_wResE=50, loc_wResI=1000, scale_wResI=50):
-    s = 'loc_wResE{}scale_wResE{}'.format(loc_wResE, scale_wResE)
+def bo_process(loc_wResE=1000, scale_wResE=50, loc_wResI=-1000, scale_wResI=50):
+    s = 'loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}'.format(loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    print("- Running with: {}".format(s))
     uid = hashlib.md5(s.encode('utf-8')).hexdigest()
     title = '{}_{}'.format(exp_name, uid)
-    return experiment(wGen=3500, wInp=3500, loc_wResE=loc_wResE, scale_wResE=scale_wResE, loc_wResI=loc_wResI, scale_wResI=scale_wResI,
-        pIR=params['pIR'], pInh=params['pInh'], AoC=params['AoC'], DoC=params['DoC'], \
+    connectivity = setup_schliebs_connectivity(params['N'], params['pInh'], params['pIR'], \
+        params['Ngx'], params['Ngy'], params['Ngz'], params['AoC'], params['DoC'], \
+        loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    return experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
         N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], Ngz=params['Ngz'], \
         indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
         duration=duration, ro_time=stimulation+settings['pause']*ms, \
@@ -148,7 +152,8 @@ print("- Finished! Best solution: ")
 print("\t - score: {}".format(best['target']))
 for (key, value) in best['params'].items():
     print("\t - {}: {}".format(key, value))
-s = 'loc_wResE{}scale_wResE{}'.format(best['params']['loc_wResE'], best['params']['scale_wResE'])
+s = 'loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}'.format(
+    best['params']['loc_wResE'], best['params']['scale_wResE'], best['params']['loc_wResE'], best['params']['scale_wResE'])
 uid = hashlib.md5(s.encode('utf-8')).hexdigest()
 print("\t - uid: {}".format(uid))
 

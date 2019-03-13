@@ -118,7 +118,7 @@ def setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, \
 
     Returns
     -------
-    connectivity : object
+    connectivity : dict
         contains the two connectivity matrices as
         i and j indices to be used in the connect method
         of the synapse object in Brian2
@@ -282,7 +282,7 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
 
     Returns
     -------
-    connectivity : object
+    connectivity : dict
         contains the two connectivity matrices as
         i and j indices to be used in the connect method
         of the synapse object in Brian2
@@ -899,8 +899,7 @@ def store_result(X, Y, score, params):
         joblib.dump(record, fo)
 
 # Define experiment
-def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50, scale_wResI=10, 
-    pIR=0.3, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
+def experiment(wGen=3500, wInp=3500, connectivity=None, \
     N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
@@ -916,28 +915,11 @@ def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50,
 
     wInp : float
         weight of the input synapsis
-    
-    loc_wResE : float
-        mean value of the reservoir excitatory weights distribution
 
-    scale_wResE : float
-        standard deviation of the reservoir excitatory weights distribution
-
-    loc_wResI : float
-        mean value of the reservoir inhibitory weights distribution
-
-    scale_wResI : float
-        standard deviation of the reservoir inhibitory weights distribution
-
-    pIR : float
-        probability of connection for the input neurons
-
-    pInh : float
-        probability that a reservoir neuron is inhibitory
-
-    AoC : list
-        list of probability amplitudes for the connections between
-        reservoir neurons ([ex-ex, ex-inh, inh-ex, inh-inh])
+    connectivity : dict
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
 
     N : int
         number of neurons in the reservoir
@@ -1009,12 +991,7 @@ def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50,
     """
     params = dict(locals())
     start = time.perf_counter()
-    print("- running with: wGen={}, wInp={}, loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}".format(wGen, wInp, \
-        loc_wResE, scale_wResE, loc_wResI, scale_wResI))
-    # Setup connectivity of the network
-    # and the neurons time constant
-    connectivity = setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
-    #connectivity = setup_hennequin_connectivity(N, pIR, Ngx, Ngy, 0.5, 1.0, 3, DoC, loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    # Set neurons time constant
     Itau = getTauCurrent(tau*ms)
     # Set C++ backend and time step
     if title==None:
@@ -1064,68 +1041,3 @@ def experiment(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50,
     print("- experiment took {} [s]".format(time.perf_counter()-start))
     return s
 
-if __name__ == '__main__':
-    from utils.modulator import AsynchronousDeltaModulator
-
-    # Set brian2 extra compilation arguments
-    prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
-
-    # Import dataset and prepare samples
-    snr = 18
-    # modulations = [
-    #     '8PSK', 'AM-DSB', 'AM-SSB', 'BPSK', 'CPFSK', 'GFSK', 'PAM4', 'QAM16', 'QAM64', 'QPSK', 'WBFM'
-    # ]
-    modulations = [
-        '8PSK', 'BPSK', 'QPSK'
-    ]
-    num_samples = 20
-    tot_num_samples = num_samples*len(modulations)
-    dataset = load_dataset('./data/radioML/RML2016.10a_dict.pkl', snr=snr, normalize=True)
-    # Define delta modulators
-    time_sample = np.arange(128)
-    thrup = 0.01
-    thrdn = 0.01
-    resampling_factor = 200
-    stretch_factor = 50
-    modulator = [
-        AsynchronousDeltaModulator(thrup, thrdn, resampling_factor),
-        AsynchronousDeltaModulator(thrup, thrdn, resampling_factor)
-    ]
-    # Prepare stimulus
-    print("preparing input stimulus")
-    indices = []
-    times = []
-    Y = []
-    pause = 5000*ms
-    stimulation = (len(time_sample)*resampling_factor*stretch_factor/1e3)*ms
-    duration = (stimulation+pause)*num_samples*len(modulations)
-    to = 0.0*ms
-    for (i, mod) in tqdm(enumerate(modulations)):
-        for j in range(num_samples):
-            sample = dataset[(mod, snr)][j]
-            ix, tx, _, _ = modulate(modulator[0], modulator[1], time_sample, sample, \
-                            resampling_factor=resampling_factor, stretch_factor=stretch_factor)
-            tx = tx + to
-            indices.extend(ix)
-            times.extend(tx)
-            Y.append(i)
-            to = (stimulation+pause)*(i*num_samples+j+1)
-    print("\t - duration: {}s".format(duration))
-
-    # Test the experiment function
-    plot_flags = {
-        'raster': False,
-        'result': True,
-        'network': True,
-        'weights': True,
-        'weights3D': True,
-        'similarity': True,
-        'currents': False
-    }
-    score = experiment(wGen=3500, wInp=3500, loc_wResE=1.0, scale_wResE=0.5, loc_wResI=-1.0, scale_wResI=0.5, 
-        pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=0.2, \
-        N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
-        indices=indices, times=times, stretch_factor=stretch_factor, duration=stimulation+pause, ro_time=stimulation+pause, \
-        modulations=modulations, snr=snr, num_samples=num_samples, Y=Y, \
-        plot=plot_flags, store=False)
-    print(score)
