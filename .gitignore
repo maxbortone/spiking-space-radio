@@ -1,10 +1,13 @@
 *.ipynb
 .python-version
 .ipynb_checkpoints/
+.vscode/
 __pycache__
 data/
 results/
 experiments/
+images/
 teili/
+CommPy/
 *.json
 *_standalone/
