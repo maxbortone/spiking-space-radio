@@ -2,7 +2,6 @@ import numpy as np
 import pickle
 from itertools import product
 from sklearn.preprocessing import Normalizer
-from brian2 import us
 
 
 def load_dataset(path, modulations='all', snr='all', normalize=False):
@@ -30,27 +29,3 @@ def load_dataset(path, modulations='all', snr='all', normalize=False):
             samples[:, 0, :] = Normalizer(copy=False).fit_transform(samples[:, 0, :])
             samples[:, 1, :] = Normalizer(copy=False).fit_transform(samples[:, 1, :])
     return dataset
-    
-def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=1):
-    admI.interpolate(time, sample[0, :])
-    admQ.interpolate(time, sample[1, :])
-    admI.encode()
-    admQ.encode()
-    indices = []
-    times = []
-    time_stim = np.arange(len(time)*resampling_factor)*stretch_factor
-    for i in range(admI.time_length):
-        if admI.up[i]:
-            indices.append(0)
-            times.append(time_stim[i])
-        if admI.dn[i]:
-            indices.append(1)
-            times.append(time_stim[i])
-        if admQ.up[i]:
-            indices.append(2)
-            times.append(time_stim[i])
-        if admQ.dn[i]:
-            indices.append(3)
-            times.append(time_stim[i])
-    signal = np.array([admI.vin, admQ.vin])
-    return np.array(indices), np.array(times)*us, time_stim, signal

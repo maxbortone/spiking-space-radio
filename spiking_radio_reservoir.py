@@ -7,10 +7,8 @@ import matplotlib.colors as clr
 import matplotlib.cm as cmx
 import matplotlib.ticker as ticker
 from mpl_toolkits import mplot3d
-import multiprocessing as mp
 from datetime import datetime
 from tqdm import tqdm
-from utils.dataset import *
 from utils.reservoir import getTauCurrent
 from brian2 import pA, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
 from teili import TeiliNetwork
@@ -839,7 +837,7 @@ def plot_similarity(X, Y, modulations, directory=None):
         plt.savefig(directory+'/similarity.pdf', bbox_inches='tight')
         plt.close(fig=fig)
 
-def plot_currents(monitor, connectivity, directory=None):
+def plot_currents(monitor, directory=None):
     """
     Plot the some randomly chosen synaptic currents
 
@@ -848,16 +846,11 @@ def plot_currents(monitor, connectivity, directory=None):
     monitor : StateMonitor
         state monitor of the reservoir
 
-    connectivity : object
-        contains the two connectivity matrices as
-        i and j indices to be used in the connect method
-        of the synapse object in Brian2
-
     directory : string
         path to the folder into which the plot should be saved
     """
     recorded_synapsis = monitor.record
-    print("Synapse: ", recorded_synapsis)
+    #print("Synapse: ", recorded_synapsis)
     fig = plt.figure()
     grd = grs.GridSpec(len(recorded_synapsis), 1, wspace=0.0, hspace=0.0)
     for i in range(len(recorded_synapsis)):
@@ -1030,7 +1023,7 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
         if plot['similarity']:
             plot_similarity(X, Y, modulations, directory=plots_dir)
         if plot['currents']:
-            plot_currents(network['smRes'], connectivity, directory=plots_dir)
+            plot_currents(network['smRes'], directory=plots_dir)
     # Measure reservoir perfomance
     s = classify(X, Y)
     if store:

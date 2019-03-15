@@ -1,8 +1,11 @@
 from spiking_radio_reservoir import *
-from utils.modulator import AsynchronousDeltaModulator
+from utils.modulator import AsynchronousDeltaModulator, modulate
 from utils.plotting import plot_sample
 import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
+
+# Set brian2 extra compilation arguments
+prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 
 def I(f, t):
     return np.sin(2*np.pi*f*t)
@@ -18,10 +21,11 @@ def generate_sample(freq, phase, plot=False, title=None):
         plot_sample(signal, time_stim, indices, times, title)
     return indices, times
 
-def test(wGen=3500, wInp=3500, loc_wResE=50, scale_wResE=10, loc_wResI=50, scale_wResI=10, \
-        pIR=0.3, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, \
+def test(wGen=3500, wInp=3500, loc_wResE=1, scale_wResE=0.5, loc_wResI=-1, scale_wResI=0.5, \
+        pIR=0.3, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=0.2, \
         N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
-        stretch_factor=None, duration=None, ro_time=None, phases=None, num_samples=None, Y=None):
+        stretch_factor=None, duration=None, ro_time=None, \
+        indices=None, times=None, phases=None, num_samples=None, Y=None):
     start = time.perf_counter()
     print("- running with: wInp={}, loc_wResE={}, scale_wResE={}, loc_wResI={}, scale_wResI={}"
         .format(wInp, loc_wResE, scale_wResE, loc_wResI, scale_wResI))
@@ -85,4 +89,5 @@ for (i, p) in enumerate(phases):
     Y.append(i)
 
 test(loc_wResE=400, scale_wResE=100, loc_wResI=-1000, scale_wResI=100, pIR=0.1, pInh=0.2, AoC=[0.3, 0.2, 0.5, 0.1], DoC=2, 
-    stretch_factor=stretch_factor, duration=to, ro_time=duration, phases=phases, num_samples=len(phases), Y=Y)
+    stretch_factor=stretch_factor, duration=to, ro_time=duration, \
+    indices=indices, times=times, phases=phases, num_samples=len(phases), Y=Y)

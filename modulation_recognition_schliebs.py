@@ -1,5 +1,10 @@
 from spiking_radio_reservoir import *
-from utils.modulator import AsynchronousDeltaModulator
+from utils.dataset import load_dataset
+from utils.modulator import AsynchronousDeltaModulator, modulate
+from brian2 import us
+
+# Set brian2 extra compilation arguments
+prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 
 # Import dataset and prepare samples
 # - modulations:
@@ -41,7 +46,7 @@ for (i, mod) in tqdm(enumerate(settings['modulations'])):
         ix, tx, _, _ = modulate(modulator[0], modulator[1], settings['time_sample'], sample, \
                                 resampling_factor=settings['resampling_factor'], \
                                 stretch_factor=settings['stretch_factor'])
-        tx = tx + to
+        tx = tx*us + to
         indices.extend(ix)
         times.extend(tx)
         Y.append(i)

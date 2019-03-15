@@ -1,5 +1,10 @@
 from spiking_radio_reservoir import *
-from utils.modulator import AsynchronousDeltaModulator
+from utils.dataset import load_dataset
+from utils.modulator import AsynchronousDeltaModulator, modulate
+from brian2 import us
+
+# Set brian2 extra compilation arguments
+prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 
 # Import dataset and prepare samples
 # - modulations:
@@ -41,7 +46,7 @@ for (i, mod) in tqdm(enumerate(settings['modulations'])):
         ix, tx, _, _ = modulate(modulator[0], modulator[1], settings['time_sample'], sample, \
                                 resampling_factor=settings['resampling_factor'], \
                                 stretch_factor=settings['stretch_factor'])
-        tx = tx + to
+        tx = tx*us + to
         indices.extend(ix)
         times.extend(tx)
         Y.append(i)
@@ -62,11 +67,11 @@ params = {
     'pE_local': 0.5,
     'pI_local': 1.0,
     'k': 3,
-    'DoC': 2,
-    'loc_wResE': 1,
-    'scale_wResE': 0.5,
-    'loc_wResI': -1,
-    'scale_wResI': 0.5,
+    'DoC': 0.2,
+    'loc_wResE': 100,
+    'scale_wResE': 10,
+    'loc_wResI': -100,
+    'scale_wResI': 10,
     'N': 200,
     'tau': 20,
     'Ngx': 10,
@@ -103,7 +108,7 @@ connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['
 score = experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
     N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
     indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
-    duration=stimulation+settings['pause']*ms, ro_time=stimulation+settings['pause']*ms, \
+    duration=duration, ro_time=stimulation+settings['pause']*ms, \
     modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
     plot=plot_flags, store=False, title=exp_name, exp_dir=exp_dir, remove_device=True)
 print(score)
