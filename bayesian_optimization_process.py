@@ -58,7 +58,7 @@ for (i, mod) in tqdm(enumerate(settings['modulations'])):
 print("\t * total duration: {}s".format(duration))
 
 # Create experiment folder
-exp_name = 'weights_bo'
+exp_name = 'bo_hennequin_wRes'
 exp_dir = './experiments/{}-{}'.format(exp_name, datetime.now().strftime("%Y-%m-%dT%H-%M"))
 if not os.path.exists(exp_dir):
     os.makedirs(exp_dir)
@@ -69,33 +69,45 @@ plot_flags = {
     'result': True,
     'network': False,
     'weights': False,
+    'weights3D': False,
     'similarity': True,
     'currents': False
 }
 
 # Define Bayesian optmization process
 params = {
+    # 'wGen': 3500,
+    # 'wInp': 3500,
+    # 'pIR': 0.1,
+    # 'pInh': 0.2,
+    # 'AoC': [0.3, 0.2, 0.5, 0.1],
+    # 'DoC': 2,
+    # 'N': 200,
+    # 'tau': 20,
+    # 'Ngx': 5,
+    # 'Ngy': 5,
+    # 'Ngz': 8,
     'wGen': 3500,
     'wInp': 3500,
     'pIR': 0.1,
-    'pInh': 0.2,
-    'AoC': [0.3, 0.2, 0.5, 0.1],
-    'DoC': 2,
+    'pE_local': 0.5,
+    'pI_local': 1.0,
+    'k': 3,
+    'DoC': 0.2,
     'N': 200,
     'tau': 20,
-    'Ngx': 5,
-    'Ngy': 5,
-    'Ngz': 8,
+    'Ngx': 10,
+    'Ngy': 10,
 }
 pbounds = {
     #'N': (50, 200),            # number of neurons   
     #'tau': (20, 200),          # DPI time constant [ms]
     #'wGen': (50, 5000),         # units of baseweight
     #'wInp': (50, 5000),         # units of baseweight
-    'loc_wResE': (1000, 1200),         # units of baseweight
-    'scale_wResE': (50, 100),         # units of baseweight
-    'loc_wResI': (-1200, -1000),         # units of baseweight
-    'scale_wResI': (50, 100),         # units of baseweight    
+    'loc_wResE': (100, 1000),         # units of baseweight
+    'scale_wResE': (10, 100),         # units of baseweight
+    'loc_wResI': (-1000, -100),         # units of baseweight
+    'scale_wResI': (10, 100),         # units of baseweight    
     #'DoC': ()                  # density of connection   
 }
 
@@ -104,11 +116,14 @@ def bo_process(loc_wResE=1000, scale_wResE=50, loc_wResI=-1000, scale_wResI=50):
     print("- Running with: {}".format(s))
     uid = hashlib.md5(s.encode('utf-8')).hexdigest()
     title = '{}_{}'.format(exp_name, uid)
-    connectivity = setup_schliebs_connectivity(params['N'], params['pInh'], params['pIR'], \
-        params['Ngx'], params['Ngy'], params['Ngz'], params['AoC'], params['DoC'], \
+    # connectivity = setup_schliebs_connectivity(params['N'], params['pInh'], params['pIR'], \
+    #     params['Ngx'], params['Ngy'], params['Ngz'], params['AoC'], params['DoC'], \
+    #     loc_wResE, scale_wResE, loc_wResI, scale_wResI)
+    connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['Ngx'], params['Ngy'], \
+        params['pE_local'], params['pI_local'], params['k'], params['DoC'], \
         loc_wResE, scale_wResE, loc_wResI, scale_wResI)
     return experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
-        N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], Ngz=params['Ngz'], \
+        N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
         indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
         duration=duration, ro_time=stimulation+settings['pause']*ms, \
         modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
@@ -144,8 +159,8 @@ print("- Starting optimization")
 start = time.perf_counter()
 optimizer.maximize(
     init_points=2,
-    n_iter=10,
-    kappa=3
+    n_iter=50,
+    kappa=5
 )
 
 # Print results
