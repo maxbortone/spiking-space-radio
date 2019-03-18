@@ -10,7 +10,7 @@ from mpl_toolkits import mplot3d
 from datetime import datetime
 from tqdm import tqdm
 from utils.reservoir import getTauCurrent
-from brian2 import pA, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
+from brian2 import pA, amp, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
 from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
 from teili.models.neuron_models import DPI
@@ -321,10 +321,8 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
         r = np.random.uniform()
         if r<pIR:
             Cin[1].append(n)
-            if n<int(N/2):
-                Cin[0].append(0)
-            else:
-                Cin[0].append(1)
+            m = np.random.choice([0, 1])
+            Cin[0].append(m)
     # return connectivity and weights
     connectivity = {
         'inp_res': {
@@ -391,7 +389,7 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wInp):
     N : int
         number of neurons in the reservoir
 
-    Itau : float
+    Itau : float or list
         current of the membrane potential decay time of
         the reservoir neurons in pA
 
@@ -917,9 +915,10 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     N : int
         number of neurons in the reservoir
 
-    tau : float
+    tau : float or tuple
         membrane potential decay time in ms of the reservoir
-        neurons
+        neurons, if tuple then it indicates the range from
+        which to sample uniformly
 
     Ngx : int
         number of reservoir neurons in the x-axis of the grid
@@ -985,7 +984,10 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     params = dict(locals())
     start = time.perf_counter()
     # Set neurons time constant
-    Itau = getTauCurrent(tau*ms)
+    if isinstance(tau, float):
+        Itau = getTauCurrent(tau*ms)
+    elif isinstance(tau, tuple):
+        Itau = np.random.uniform(low=getTauCurrent(tau[1]*ms), high=getTauCurrent(tau[0]*ms), size=N)*amp
     # Set C++ backend and time step
     if title==None:
         title = 'srres_{}'.format(os.getpid())
