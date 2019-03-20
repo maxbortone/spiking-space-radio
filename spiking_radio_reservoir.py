@@ -325,12 +325,14 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
             Cin[0].append(m)
             Cin[1].append(n)
     # connect generator to input
-    Cgen = [[0, 1, 2, 3], [0, 1, 2, 3]]
+    Cgen = [[0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 4, 4], [0, 1, 1, 0, 2, 3, 3, 2, 0, 1, 2, 3]]
+    Wgen = [1, -1, 1, -1, 1, -1, 1, -1, -1, -1, -1, -1]
     # return connectivity and weights
     connectivity = {
         'gen_inp': {
             'i': np.array(Cgen[0]),
-            'j': np.array(Cgen[1])
+            'j': np.array(Cgen[1]),
+            'w': np.array(Wgen)
         },
         'inp_res': {
             'i': np.array(Cin[0]),
@@ -348,7 +350,10 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
 
 def setup_generator(components):
     """
-    Setup the spike generator with 4 neurons and a spike monitor
+    Setup the spike generator with 4+1 neurons and a spike monitor.
+    The first 4 neurons represent the 4 input components in the
+    following order: [I.up, I.dn, Q.up, Q.dn]. The last neuron
+    fires a stop signal at the end of each input stimulus
     
     Parameters
     ----------
@@ -360,7 +365,7 @@ def setup_generator(components):
     components : dict
         network components
     """
-    gGen = SpikeGeneratorGroup(4, np.array([]), np.array([])*ms, name='gGen')
+    gGen = SpikeGeneratorGroup(5, np.array([]), np.array([])*ms, name='gGen')
     mGen = SpikeMonitor(gGen, name='mGen')
     components['generator'] = gGen
     components['monitors']['mGen'] = mGen
@@ -389,7 +394,7 @@ def setup_input_layer(components, connectivity, Ninp, currents, wGen):
     gInp.Iahp = currents['gInp']['Itau']
     sGenInp = Connections(components['generator'], gInp, equation_builder=DPISyn(), method='euler', name='sGenInp')
     sGenInp.connect(i=connectivity['gen_inp']['i'], j=connectivity['gen_inp']['j'])
-    sGenInp.weight = wGen
+    sGenInp.weight = wGen*connectivity['gen_inp']['w']
     mInp = SpikeMonitor(gInp, name='mInp')
     smInp = StateMonitor(gInp, ['Imem'], name='smInp', record=True)
     components['layers']['gInp'] = gInp
