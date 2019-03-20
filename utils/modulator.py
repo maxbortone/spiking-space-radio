@@ -42,17 +42,19 @@ class AsynchronousDeltaModulator():
                 actual_dc = actual_dc - self.thrdn
             self.rec[i] = actual_dc
 
-def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=None):
+def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=1):
     admI.interpolate(time, sample[0, :])
     admQ.interpolate(time, sample[1, :])
     admI.encode()
     admQ.encode()
     indices = []
     times = []
-    if stretch_factor:
-        time_stim = np.arange(len(time)*resampling_factor)*stretch_factor
-    else:
-        time_stim = np.linspace(np.min(time), np.max(time), num=len(time)*resampling_factor, endpoint=True)
+    # TODO: refactor stimulation time using linspace and multiplying it by stretch factor
+    # if stretch_factor:
+    #     time_stim = np.arange(len(time)*resampling_factor)*stretch_factor
+    # else:
+    #     time_stim = np.linspace(np.min(time), np.max(time), num=len(time)*resampling_factor, endpoint=True)
+    time_stim = np.linspace(np.min(time), np.max(time), num=len(time)*resampling_factor, endpoint=True)
     for i in range(admI.time_length):
         if admI.up[i]:
             indices.append(0)
@@ -67,4 +69,4 @@ def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=None)
             indices.append(3)
             times.append(time_stim[i])
     signal = np.array([admI.vin, admQ.vin])
-    return np.array(indices), np.array(times), time_stim, signal
+    return np.array(indices), np.array(times)*stretch_factor, time_stim*stretch_factor, signal
