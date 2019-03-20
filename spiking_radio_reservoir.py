@@ -9,7 +9,6 @@ import matplotlib.ticker as ticker
 from mpl_toolkits import mplot3d
 from datetime import datetime
 from tqdm import tqdm
-from utils.reservoir import getTauCurrent
 from brian2 import pA, amp, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
 from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
@@ -232,7 +231,7 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
     Setup connectivity matrices for the synapsis between
     input layer and reservoir and those within the reservoir itself
     as folows:
-        - the reservoir is split in 2  2D-grids of size (Ngx, Ngy):
+        - the reservoir is split in 2 2D-grids of size (Ngx, Ngy):
           one for excitatory neurons and one for inhibitory
         - each input neuron projects to a subset of reservoir neurons
         - both excitatory and inhibitory neurons can connect locally
@@ -293,16 +292,17 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
     """
     if 2*Ngx*Ngy!=N: 
         raise Exception("Reservoir grid dimensions do not coincide with number of neurons.")
+    M = int(Ngx*Ngy)
     # se treservoir neurons and organize them on a grid
     neurons = np.arange(N)
-    types = np.array([1 for i in range(Ngx*Ngy)] + [-1 for i in range(Ngx*Ngy)])
+    types = np.array([1 for i in range(M)] + [-1 for i in range(M)])
     grid = neurons.reshape((2, Ngx, Ngy))
     # connect reservoir neurons
     Cres = [[], []]
     Wres = []
     for n in neurons:
         a = _hennequin_coords(n, grid)
-        if n<int(N/2):
+        if n<M:
             p_local = pE_local
         else:
             p_local = pI_local
@@ -317,14 +317,21 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
                 Wres.append(_hennequin_wAB(types[n], loc_wResE, scale_wResE, loc_wResI, scale_wResI))
     # connect input to reservoir
     Cin = [[], []]
-    for n in neurons:
-        r = np.random.uniform()
-        if r<pIR:
-            Cin[1].append(n)
-            m = np.random.choice([0, 1])
+    I = int(pIR*M)
+    input_neurons = np.random.choice(np.arange(M), size=I, replace=False)
+    J = int(I/4)
+    for m in range(4):
+        for n in input_neurons[m*J:(m+1)*J]:
             Cin[0].append(m)
+            Cin[1].append(n)
+    # connect generator to input
+    Cgen = [[0, 1, 2, 3], [0, 1, 2, 3]]
     # return connectivity and weights
     connectivity = {
+        'gen_inp': {
+            'i': np.array(Cgen[0]),
+            'j': np.array(Cgen[1])
+        },
         'inp_res': {
             'i': np.array(Cin[0]),
             'j': np.array(Cin[1])
@@ -339,7 +346,27 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
     }
     return connectivity
 
-def setup_input_layer(components, wGen):
+def setup_generator(components):
+    """
+    Setup the spike generator with 4 neurons and a spike monitor
+    
+    Parameters
+    ----------
+    components : object
+        previously defined network components
+
+    Returns
+    -------
+    components : dict
+        network components
+    """
+    gGen = SpikeGeneratorGroup(4, np.array([]), np.array([])*ms, name='gGen')
+    mGen = SpikeMonitor(gGen, name='mGen')
+    components['generator'] = gGen
+    components['monitors']['mGen'] = mGen
+    return components
+
+def setup_input_layer(components, connectivity, Ninp, currents, wGen):
     """
     Setup the input layer consisting of a spike generator with 4 neurons
     that project to 2 input neurons through excitatory and inhibitory synapsis
@@ -354,24 +381,24 @@ def setup_input_layer(components, wGen):
 
     Returns
     -------
-    components : object
+    components : dict
         network components
     """
-    gGen = SpikeGeneratorGroup(4, np.array([]), np.array([])*ms, name='gGen')
-    gInp = Neurons(2, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gInp')
-    gInp.Iahp = 0.5*pA
-    sGenInp = Connections(gGen, gInp, equation_builder=DPISyn(), method='euler', name='sGenInp')
-    sGenInp.connect(i=[0, 1, 2, 3], j=[0, 0, 1, 1])
-    sGenInp.weight = wGen*np.array([1.0, -1.0, 1.0, -1.0])
-    mGen = SpikeMonitor(gGen, name='mGen')
+    gInp = Neurons(Ninp, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gInp')
+    gInp.Iahp = currents['gInp']['Iahp']
+    gInp.Iahp = currents['gInp']['Itau']
+    sGenInp = Connections(components['generator'], gInp, equation_builder=DPISyn(), method='euler', name='sGenInp')
+    sGenInp.connect(i=connectivity['gen_inp']['i'], j=connectivity['gen_inp']['j'])
+    sGenInp.weight = wGen
     mInp = SpikeMonitor(gInp, name='mInp')
-    components['generator'] = gGen
-    components['layers'] = {'gInp': gInp}
-    components['synapsis'] = {'sGenInp': sGenInp}
-    components['monitors'] = {'mGen': mGen, 'mInp': mInp}
+    smInp = StateMonitor(gInp, ['Imem'], name='smInp', record=True)
+    components['layers']['gInp'] = gInp
+    components['synapsis']['sGenInp'] = sGenInp
+    components['monitors']['mInp'] = mInp
+    components['monitors']['smInp'] = smInp
     return components
 
-def setup_reservoir_layer(components, connectivity, N, Itau, wInp):
+def setup_reservoir_layer(components, connectivity, N, currents, wInp):
     """
     Setup the reservoir layer consisting of a group of randomly connected neurons.
     The connections can be excitatory or inhibitory.
@@ -389,29 +416,38 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wInp):
     N : int
         number of neurons in the reservoir
 
-    Itau : float or list
-        current of the membrane potential decay time of
-        the reservoir neurons in pA
+    currents : dict
+        dictionary with values of different currents for the input and
+        reservoir neurons and synapsis
 
     wInp : float
         weight of the input synapsis
 
     Returns
     -------
-    components : object
+    components : dict
         network components
     """
     gRes = Neurons(N, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gRes')
-    gRes.Iahp = 0.5*pA
-    gRes.Itau = Itau
-    sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
-    sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
-    sResRes.weight = connectivity['res_res']['w']
-    #sResRes.I_etau = Ietau
-    #sResRes.I_itau = Iitau 
+    gRes.Iahp = currents['gRes']['Iahp']
+    gRes.Itau = currents['gRes']['Itau']
     sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
     sInpRes.connect(i=connectivity['inp_res']['i'], j=connectivity['inp_res']['j'])
     sInpRes.weight = wInp
+    sInpRes.Ie_tau = currents['sInpRes']['Ie_tau']
+    sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
+    sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
+    sResRes.weight = connectivity['res_res']['w']
+    if isinstance(currents['sResRes']['Ie_tau'], tuple):
+        sResRes.Ie_tau = np.random.uniform(currents['sResRes']['Ie_tau'][0], \
+            currents['sResRes']['Ie_tau'][1], size=len(sResRes))*amp
+    else:
+        sResRes.Ie_tau = currents['sResRes']['Ie_tau']
+    if isinstance(currents['sResRes']['Ii_tau'], tuple):
+        sResRes.Ii_tau = np.random.uniform(currents['sResRes']['Ii_tau'][0], \
+            currents['sResRes']['Ii_tau'][1], size=len(sResRes))*amp
+    else:
+        sResRes.Ii_tau = currents['sResRes']['Ii_tau']
     mRes = SpikeMonitor(gRes, name='mRes')
     recorded_synapsis = np.random.randint(0, high=len(connectivity['res_res']['i']), size=10)
     smRes = StateMonitor(sResRes, ['Ie_syn', 'Ii_syn'], name='smRes', record=recorded_synapsis)
@@ -422,12 +458,15 @@ def setup_reservoir_layer(components, connectivity, N, Itau, wInp):
     components['monitors']['smRes'] = smRes
     return components
 
-def init_network(indices, times, connectivity, N, Itau, wGen, wInp):
+def init_network(components, indices, times):
     """
     Initialize the network with the input stimulus
 
     Parameters
     ----------
+    components : dict
+        network components
+
     indices : list
         spike generator neuron indices
 
@@ -439,38 +478,12 @@ def init_network(indices, times, connectivity, N, Itau, wGen, wInp):
         i and j indices to be used in the connect method
         of the synapse object in Brian2
 
-    N : int
-        number of neurons in the reservoir
-
-    tau : float
-        membrane potential decay time in ms of the reservoir
-        neurons
-
-    wGen : float
-        weight of the generator synapsis
-
-    wInp : float
-        weight of the input synapsis
-    
-    loc_wRes : float
-        mean value of the reservoir weights distribution
-
-    scale_wRes : float
-        standard deviation of the reservoir weights distribution
-
     Returns
     -------
     network : TeiliNetwork
         instance of the network with all the commponents
     """
-    # setup input layer
-    components = {'generator': None, 'layers': None, 'synapsis': None, 'monitors': None}
-    components = setup_input_layer(components, wGen)
-    # setup reservoir layer
-    components = setup_reservoir_layer(components, connectivity, N, Itau, wInp)
-    # set spikes
     components['generator'].set_spikes(indices, times)
-    # initialize network
     network = TeiliNetwork()
     network.add(components['generator'])
     network.add(list(components['layers'].values()))
@@ -891,10 +904,10 @@ def store_result(X, Y, score, params):
 
 # Define experiment
 def experiment(wGen=3500, wInp=3500, connectivity=None, \
-    N=200, tau=20, Ngx=5, Ngy=5, Ngz=8, \
+    N=200, currents=None, Ngx=5, Ngy=5, Ngz=8, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
-    plot=False, store=False, title=None, exp_dir=None, remove_device=False):
+    plot=False, store=False, title=None, exp_dir=None, dt=100*us, remove_device=False):
     """
     Run an experiment on a reservoir with given properties and evaluate
     its performance in terms of clustering inputs of different classes.
@@ -915,10 +928,9 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     N : int
         number of neurons in the reservoir
 
-    tau : float or tuple
-        membrane potential decay time in ms of the reservoir
-        neurons, if tuple then it indicates the range from
-        which to sample uniformly
+    currents : dict
+        dictionary with values of different currents for the input and
+        reservoir neurons and synapsis
 
     Ngx : int
         number of reservoir neurons in the x-axis of the grid
@@ -972,6 +984,9 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
         path to the experiment directory where to store
         the plots
 
+    dt : float (us)
+        time step of the simulation in us
+
     remove_device : bool
         wheter the device folder should be removed after
         the experiment or not
@@ -983,21 +998,39 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     """
     params = dict(locals())
     start = time.perf_counter()
-    # Set neurons time constant
-    if isinstance(tau, float):
-        Itau = getTauCurrent(tau*ms)
-    elif isinstance(tau, tuple):
-        Itau = np.random.uniform(low=getTauCurrent(tau[1]*ms), high=getTauCurrent(tau[0]*ms), size=N)*amp
-    # Set C++ backend and time step
+    # Set default currents
+    if currents==None:
+        currents = {
+            'gInp': {
+                'Iahp': 0.5*pA,
+                'Itau': 8*pA
+            },
+            'gRes': {
+                'Iahp': 0.5*pA,
+                'Itau': 8*pA
+            },
+            'sInpRes': {
+                'Ie_tau': 10*pA
+            },
+            'sResRes': {
+                'Ie_tau': 10*pA,
+                'Ii_tau': 10*pA
+            }
+        }
+    # Set C++ backend and time step    
     if title==None:
         title = 'srres_{}'.format(os.getpid())
     directory = '../brian2_devices/' + title
     set_device('cpp_standalone', directory=directory, build_on_run=True)
     device.reinit()
     device.activate(directory=directory, build_on_run=True)
-    defaultclock.dt = stretch_factor*us
+    defaultclock.dt = dt
+    # Setup network components
+    components = {'generator': None, 'layers': {}, 'synapsis': {}, 'monitors': {}}
+    components = setup_generator(components)#setup_input_layer(components, wGen)
+    components = setup_reservoir_layer(components, connectivity, N, currents, wInp)
     # Initialize network
-    network = init_network(indices, times, connectivity, N, Itau, wGen, wInp)    
+    network = init_network(components, indices, times)    
     # Run simulation
     network.run(duration, recompile=True)
     # Readout activity
