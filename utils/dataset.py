@@ -4,7 +4,7 @@ from itertools import product
 from sklearn.preprocessing import Normalizer
 
 
-def load_dataset(path, modulations='all', snr='all', normalize=False):
+def load_dataset(path, modulations='all', snr='all', scale=None, normalize=False):
     with open(path, 'rb') as f:
         dataset = pickle.load(f, encoding='latin1')
     all_modulations = np.unique(list(map(lambda x: x[0], dataset.keys())))
@@ -28,4 +28,7 @@ def load_dataset(path, modulations='all', snr='all', normalize=False):
             samples = dataset[c]
             samples[:, 0, :] = Normalizer(copy=False).fit_transform(samples[:, 0, :])
             samples[:, 1, :] = Normalizer(copy=False).fit_transform(samples[:, 1, :])
+    if scale:
+        for c in classes:
+            dataset[c] = scale*dataset[c]
     return dataset
