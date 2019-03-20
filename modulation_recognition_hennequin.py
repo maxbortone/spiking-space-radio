@@ -1,5 +1,6 @@
 from spiking_radio_reservoir import *
 from utils.dataset import load_dataset
+from utils.reservoir import getTauCurrent
 from utils.modulator import AsynchronousDeltaModulator, modulate
 from brian2 import us
 
@@ -73,7 +74,19 @@ params = {
     'loc_wResI': -1000,
     'scale_wResI': 100,
     'N': 200,
-    'tau': (20, 200),
+    'currents': {
+        'gRes': {
+            'Iahp': 0.5*pA,
+            'Itau': getTauCurrent(0.5*ms)
+        },
+        'sInpRes': {
+            'Ie_tau': getTauCurrent(0.5*ms)
+        },
+        'sResRes': {
+            'Ie_tau': (getTauCurrent(2*ms), getTauCurrent(0.5*ms)),
+            'Ii_tau': (getTauCurrent(2*ms), getTauCurrent(0.5*ms))
+        }
+    },
     'Ngx': 10,
     'Ngy': 10,
 }
@@ -106,7 +119,7 @@ connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['
 
 # Run experiment
 score = experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
-    N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
+    N=params['N'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
     indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
     duration=duration, ro_time=stimulation+settings['pause']*ms, \
     modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
