@@ -10,7 +10,7 @@ def _round_complex(x):
 
 def send(input_string, m=2, modem=PSKModem, Ts=1e-3, Fs=int(6e4), fc=int(3e3)):
     # convert string to bitsarray
-    bits_string = ''.join(format(x, 'b') for x in bytearray(input_string, encoding='utf-8'))
+    bits_string = ''.join('{0:08b}'.format(x, 'b') for x in bytearray(input_string, encoding='utf-8'))
     input_bits = np.array([int(b) for b in bits_string])
     # instantiate modem
     modem = modem(m)
