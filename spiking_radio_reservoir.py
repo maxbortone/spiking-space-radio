@@ -318,10 +318,15 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
     # connect input to reservoir
     Cin = [[], []]
     I = int(pIR*M)
-    input_neurons = np.random.choice(np.arange(M), size=I, replace=False)
-    J = int(I/4)
-    for m in range(4):
-        for n in input_neurons[m*J:(m+1)*J]:
+    input_neurons_exc = np.random.choice(np.arange(M), size=I, replace=False)
+    input_neurons_inh = np.random.choice(np.arange(M, 2*M), size=I, replace=False)
+    J = int(I/2)
+    for (k, m) in enumerate([0, 2]):
+        for n in input_neurons_exc[k*J:(k+1)*J]:
+            Cin[0].append(m)
+            Cin[1].append(n)
+    for (k, m) in enumerate([1, 3]):
+        for n in input_neurons_inh[k*J:(k+1)*J]:
             Cin[0].append(m)
             Cin[1].append(n)
     # connect generator to input
@@ -445,16 +450,8 @@ def setup_reservoir_layer(components, connectivity, N, currents, wInp):
     sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
     sResRes.weight = connectivity['res_res']['w']
     num_syn = len(connectivity['res_res']['w'])
-    if isinstance(currents['sResRes']['Ie_tau'], tuple):
-        sResRes.Ie_tau = np.random.uniform(currents['sResRes']['Ie_tau'][0], \
-            currents['sResRes']['Ie_tau'][1], size=num_syn)*amp
-    else:
-        sResRes.Ie_tau = currents['sResRes']['Ie_tau']
-    if isinstance(currents['sResRes']['Ii_tau'], tuple):
-        sResRes.Ii_tau = np.random.uniform(currents['sResRes']['Ii_tau'][0], \
-            currents['sResRes']['Ii_tau'][1], size=num_syn)*amp
-    else:
-        sResRes.Ii_tau = currents['sResRes']['Ii_tau']
+    for (key, value) in currents['sResRes'].items():
+        setattr(sResRes, key, value)
     mRes = SpikeMonitor(gRes, name='mRes')
     recorded_synapsis = np.random.randint(0, high=len(connectivity['res_res']['i']), size=10)
     smRes = StateMonitor(sResRes, ['Ie_syn', 'Ii_syn'], name='smRes', record=recorded_synapsis)
