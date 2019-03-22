@@ -9,7 +9,7 @@ import matplotlib.ticker as ticker
 from mpl_toolkits import mplot3d
 from datetime import datetime
 from tqdm import tqdm
-from brian2 import pA, amp, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
+from brian2 import nA, pA, amp, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
 from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
 from teili.models.neuron_models import DPI
@@ -390,8 +390,8 @@ def setup_input_layer(components, connectivity, Ninp, currents, wGen):
         network components
     """
     gInp = Neurons(Ninp, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gInp')
-    gInp.Iahp = currents['gInp']['Iahp']
-    gInp.Iahp = currents['gInp']['Itau']
+    for (key, value) in currents['gInp'].items():
+        setattr(gInp, key, value)
     sGenInp = Connections(components['generator'], gInp, equation_builder=DPISyn(), method='euler', name='sGenInp')
     sGenInp.connect(i=connectivity['gen_inp']['i'], j=connectivity['gen_inp']['j'])
     sGenInp.weight = wGen*connectivity['gen_inp']['w']
@@ -434,23 +434,25 @@ def setup_reservoir_layer(components, connectivity, N, currents, wInp):
         network components
     """
     gRes = Neurons(N, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gRes')
-    gRes.Iahp = currents['gRes']['Iahp']
-    gRes.Itau = currents['gRes']['Itau']
+    for (key, value) in currents['gRes'].items():
+        setattr(gRes, key, value)
     sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
     sInpRes.connect(i=connectivity['inp_res']['i'], j=connectivity['inp_res']['j'])
     sInpRes.weight = wInp
-    sInpRes.Ie_tau = currents['sInpRes']['Ie_tau']
+    for (key, value) in currents['sInpRes'].items():
+        setattr(sInpRes, key, value)
     sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
     sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
     sResRes.weight = connectivity['res_res']['w']
+    num_syn = len(connectivity['res_res']['w'])
     if isinstance(currents['sResRes']['Ie_tau'], tuple):
         sResRes.Ie_tau = np.random.uniform(currents['sResRes']['Ie_tau'][0], \
-            currents['sResRes']['Ie_tau'][1], size=len(sResRes))*amp
+            currents['sResRes']['Ie_tau'][1], size=num_syn)*amp
     else:
         sResRes.Ie_tau = currents['sResRes']['Ie_tau']
     if isinstance(currents['sResRes']['Ii_tau'], tuple):
         sResRes.Ii_tau = np.random.uniform(currents['sResRes']['Ii_tau'][0], \
-            currents['sResRes']['Ii_tau'][1], size=len(sResRes))*amp
+            currents['sResRes']['Ii_tau'][1], size=num_syn)*amp
     else:
         sResRes.Ii_tau = currents['sResRes']['Ii_tau']
     mRes = SpikeMonitor(gRes, name='mRes')
@@ -909,7 +911,7 @@ def store_result(X, Y, score, params):
 
 # Define experiment
 def experiment(wGen=3500, wInp=3500, connectivity=None, \
-    N=200, currents=None, Ngx=5, Ngy=5, Ngz=8, \
+    N=200, Ninp=4, currents=None, Ngx=5, Ngy=5, Ngz=8, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
     plot=False, store=False, title=None, exp_dir=None, dt=100*us, remove_device=False):
@@ -932,6 +934,9 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
 
     N : int
         number of neurons in the reservoir
+        
+    Ninp : int
+        number of input neurons
 
     currents : dict
         dictionary with values of different currents for the input and
@@ -1032,8 +1037,11 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     defaultclock.dt = dt
     # Setup network components
     components = {'generator': None, 'layers': {}, 'synapsis': {}, 'monitors': {}}
-    components = setup_generator(components)#setup_input_layer(components, wGen)
+    components = setup_generator(components)
+    components = setup_input_layer(components, connectivity, Ninp, currents, wGen)
     components = setup_reservoir_layer(components, connectivity, N, currents, wInp)
+    # Reset groups
+    components['layers']['gRes'].run_regularly("Imem=0*pA", dt=ro_time)
     # Initialize network
     network = init_network(components, indices, times)    
     # Run simulation
