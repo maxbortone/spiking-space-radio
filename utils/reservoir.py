@@ -124,27 +124,27 @@ class SpikingRadioReservoir():
 def getTau(I):
     '''
     Compute DPI time constant tau in seconds for a given current value:
-    C_p : DPI capacitance [F]
-    U_t : Thermal voltage [V]
+    Cmem : DPI capacitance [F]
+    Ut : Thermal voltage [V]
     I : Current, must be given in [A]
-    tau : (C_p*U_t)/(k*I) [sec]
+    tau : (Cp*Ut)/(kappa*I) [sec]
     '''
-    C_p = 1.5*pfarad
-    U_t = 25*mV
-    k = 0.7
-    return (C_p*U_t)/(k*I)
+    Cmem = 1.5*pfarad
+    Ut = 25*mV
+    kappa = 0.705
+    return (Cmem*Ut)/(kappa*I)
 
 def getTauCurrent(tau):
     '''
     Compute the current in Amperes necessary to get a desired time constant:
     tau : Time constant, must be given in [sec]
-    C_p : DPI capacitance [F]
-    U_t : Thermal voltage [V]
-    I : (C_p*U_t)/(k*tau) [A]
+    Cmem : DPI capacitance [F]
+    Ut : Thermal voltage [V]
+    I : (Cp*Ut)/(kappa*tau) [A]
     '''
-    C_p = 1.5*pfarad
-    U_t = 25*mV
-    k = 0.7
+    Cmem = 1.5*pfarad
+    Ut = 25*mV
+    kappa = 0.705
     if tau == 0:
         return 2.390625e-05
-    return (C_p*U_t)/(k*tau)
+    return (Cmem*Ut)/(kappa*tau)
