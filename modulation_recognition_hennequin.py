@@ -16,7 +16,7 @@ prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 print("- Importing dataset")
 settings = {
     'snr': 18,
-    'modulations': ['8PSK', 'BPSK', 'QPSK'],
+    'modulations': ['8PSK'], #, 'BPSK', 'QPSK'],
     'scale': 50,
     'num_samples': 20,
     'time_sample': np.arange(128),
@@ -68,39 +68,20 @@ if not os.path.exists(exp_dir):
 # Define reservoir parameters
 params = {
     'wGen': 500,
-    'wInp': 1000,
-    'pIR': 0.3,
+    'wInp': 400,
+    'pIR': 0.15,
     'pE_local': 0.5,
     'pI_local': 1.0,
     'k': 3,
     'DoC': 0.2,
-    'loc_wResE': 50,
+    'loc_wResE': 42,
     'scale_wResE': 5,
-    'loc_wResI': -50,
-    'scale_wResI': 5,
+    'loc_wResI': -42,
+    'scale_wResI': 10,
     'Ninp': 4,
     'N': 200,
     'Ngx': 10,
-    'Ngy': 10,
-    'currents': {
-        'gInp': {
-            'Iahp': 0.5*pA,
-            'Itau': getTauCurrent(5*ms),
-            'Ispkthr': 0.2*nA
-        },
-        'gRes': {
-            'Iahp': 0.5*pA,
-            'Itau': getTauCurrent(5*ms),
-            'Ispkthr': 0.2*nA
-        },
-        'sInpRes': {
-            'Ie_tau': getTauCurrent(5*ms)
-        },
-        'sResRes': {
-            'Ie_tau': (getTauCurrent(20*ms), getTauCurrent(5*ms)),
-            'Ii_tau': (getTauCurrent(20*ms), getTauCurrent(5*ms))
-        }
-    }
+    'Ngy': 10
 }
 
 # Plots
@@ -114,6 +95,33 @@ plot_flags = {
     'currents': False
 }
 
+# Setup connectivity of the network
+connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['Ngx'], params['Ngy'], \
+    params['pE_local'], params['pI_local'], params['k'], params['DoC'], \
+    params['loc_wResE'], params['scale_wResE'], params['loc_wResI'], params['scale_wResI'])
+
+# Set currents
+num_syn = len(connectivity['res_res']['w'])
+params['currents'] = {
+    'gInp': {
+        'Iahp': 0.5*pA,
+        'Itau': getTauCurrent(5*ms),
+        'Ispkthr': 0.2*nA
+    },
+    'gRes': {
+        'Iahp': 0.5*pA,
+        'Itau': np.random.uniform(low=getTauCurrent(20*ms)/pA, high=getTauCurrent(5*ms)/pA, size=params['N'])*pA,
+        'Ispkthr': 0.2*nA
+    },
+    'sInpRes': {
+        'Ie_tau': getTauCurrent(5*ms)
+    },
+    'sResRes': {
+        'Ie_tau': np.random.uniform(low=getTauCurrent(20*ms)/pA, high=getTauCurrent(5*ms)/pA, size=num_syn)*pA,
+        'Ii_tau': np.random.uniform(low=getTauCurrent(20*ms)/pA, high=getTauCurrent(5*ms)/pA, size=num_syn)*pA
+    }
+}
+
 # Store all the parameters and settings
 settings_path = exp_dir + '/conf.txt'
 with open(settings_path, 'w+') as f:
@@ -123,11 +131,6 @@ with open(settings_path, 'w+') as f:
     f.write('Preprocessing settings: \n')
     for (key, value) in settings.items():
         f.write('- {}: {}\n'.format(key, value))
-
-# Setup connectivity of the network
-connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['Ngx'], params['Ngy'], \
-    params['pE_local'], params['pI_local'], params['k'], params['DoC'], \
-    params['loc_wResE'], params['scale_wResE'], params['loc_wResI'], params['scale_wResI'])
 
 # Run experiment
 score = experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
