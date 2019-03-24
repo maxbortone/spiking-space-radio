@@ -148,3 +148,31 @@ def getTauCurrent(tau):
     if tau == 0:
         return 2.390625e-05
     return (Cmem*Ut)/(kappa*tau)
+
+def getAhpTau(I):
+    '''
+    Compute adaptation time constant tau in seconds for a given current value:
+    Cahp : Adaptation capacitance [F]
+    Ut : Thermal voltage [V]
+    Itauahp : Current, must be given in [A]
+    tauahp : (Cahp*Ut)/(kappa*Itauahp) [sec]
+    '''
+    Cahp = 1.0*pfarad
+    Ut = 25*mV
+    kappa = 0.705
+    return (Cahp*Ut)/(kappa*I)
+
+def getAhpTauCurrent(tau):
+    '''
+    Compute the current in Amperes necessary to get a desired time constant:
+    tauahp : Adaptation time constant, must be given in [sec]
+    Cahp : DPI capacitance [F]
+    Ut : Thermal voltage [V]
+    Itauahp : (Cahp*Ut)/(kappa*tauahp) [A]
+    '''
+    Cahp = 1.0*pfarad
+    Ut = 25*mV
+    kappa = 0.705
+    if tau == 0:
+        return 2.390625e-05
+    return (Cahp*Ut)/(kappa*tau)
