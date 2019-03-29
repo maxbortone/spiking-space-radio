@@ -441,7 +441,10 @@ def setup_reservoir_layer(components, connectivity, N, currents, wInp):
     gRes = Neurons(N, equation_builder=DPI(num_inputs=2), refractory=0.0*ms, name='gRes')
     for (key, value) in currents['gRes'].items():
         setattr(gRes, key, value)
-    sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
+    if hasattr(components['layers'], 'gInp'):
+        sInpRes = Connections(components['layers']['gInp'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
+    else:
+        sInpRes = Connections(components['generator'], gRes, equation_builder=DPISyn(), method='euler', name='sInpRes')
     sInpRes.connect(i=connectivity['inp_res']['i'], j=connectivity['inp_res']['j'])
     sInpRes.weight = wInp
     for (key, value) in currents['sInpRes'].items():
@@ -449,7 +452,6 @@ def setup_reservoir_layer(components, connectivity, N, currents, wInp):
     sResRes = Connections(gRes, gRes, equation_builder=DPISyn(), method='euler', name='sResRes')
     sResRes.connect(i=connectivity['res_res']['i'], j=connectivity['res_res']['j'])
     sResRes.weight = connectivity['res_res']['w']
-    num_syn = len(connectivity['res_res']['w'])
     for (key, value) in currents['sResRes'].items():
         setattr(sResRes, key, value)
     mRes = SpikeMonitor(gRes, name='mRes')
