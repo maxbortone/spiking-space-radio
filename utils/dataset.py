@@ -31,4 +31,4 @@ def load_dataset(path, modulations='all', snr='all', scale=None, normalize=False
     if scale:
         for c in classes:
             dataset[c] = scale*dataset[c]
-    return dataset
+    return dataset, classes
