@@ -910,7 +910,7 @@ def store_result(X, Y, score, params):
 
 # Define experiment
 def experiment(wGen=3500, wInp=3500, connectivity=None, \
-    N=200, Ninp=4, currents=None, Ngx=5, Ngy=5, Ngz=8, \
+    N=200, Ninp=4, currents=None, Ngx=5, Ngy=5, Ngz=8, direct_input=False, \
     indices=None, times=None, stretch_factor=None, duration=None, ro_time=None, \
     modulations=None, snr=None, num_samples=None, Y=None, \
     plot=False, store=False, title=None, exp_dir=None, dt=100*us, remove_device=False):
@@ -949,6 +949,10 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
 
     Ngz : int
         number of reservoir neurons in the z-axis of the grid
+
+    direct_input: bool
+        wheter the input to the reservoir should be coming from
+        the generators directly or not
 
     indices : list
         spike generator neuron indices
@@ -1037,7 +1041,8 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     # Setup network components
     components = {'generator': None, 'layers': {}, 'synapsis': {}, 'monitors': {}}
     components = setup_generator(components)
-    components = setup_input_layer(components, connectivity, Ninp, currents, wGen)
+    if not direct_input:
+        components = setup_input_layer(components, connectivity, Ninp, currents, wGen)
     components = setup_reservoir_layer(components, connectivity, N, currents, wInp)
     # Reset groups
     components['layers']['gRes'].run_regularly("Imem=0*pA", dt=ro_time)
