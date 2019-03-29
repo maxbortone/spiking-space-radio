@@ -42,18 +42,13 @@ class AsynchronousDeltaModulator():
                 actual_dc = actual_dc - self.thrdn
             self.rec[i] = actual_dc
 
-def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=1):
+def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=1, reconstruct=False):
     admI.interpolate(time, sample[0, :])
     admQ.interpolate(time, sample[1, :])
     admI.encode()
     admQ.encode()
     indices = []
     times = []
-    # TODO: refactor stimulation time using linspace and multiplying it by stretch factor
-    # if stretch_factor:
-    #     time_stim = np.arange(len(time)*resampling_factor)*stretch_factor
-    # else:
-    #     time_stim = np.linspace(np.min(time), np.max(time), num=len(time)*resampling_factor, endpoint=True)
     time_stim = np.linspace(np.min(time), np.max(time), num=len(time)*resampling_factor, endpoint=True)
     for i in range(admI.time_length):
         if admI.up[i]:
@@ -69,4 +64,22 @@ def modulate(admI, admQ, time, sample, resampling_factor=1, stretch_factor=1):
             indices.append(3)
             times.append(time_stim[i])
     signal = np.array([admI.vin, admQ.vin])
-    return np.array(indices), np.array(times)*stretch_factor, time_stim*stretch_factor, signal
+    indices = np.array(indices)
+    times = np.array(times)*stretch_factor
+    time_stim = time_stim*stretch_factor
+    if reconstruct:
+        admI.decode()
+        admQ.decode()
+        reconstruction = np.array([admI.rec, admQ.rec])
+        return indices, times, time_stim, signal, reconstruction
+    else:
+        return indices, times, time_stim, signal
+    
+def reconstruction_error(signal, reconstruction):
+    if len(signal)!=len(reconstruction):
+        raise Exception("Signal and reconstruction must have same length")
+    dim, N = signal.shape
+    epsilon_rec = np.empty(dim)
+    for i in range(dim):
+        epsilon_rec[i] = np.sum((signal[i]-reconstruction[i])**2)/N
+    return epsilon_rec
