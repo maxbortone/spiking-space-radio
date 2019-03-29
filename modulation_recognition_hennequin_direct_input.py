@@ -18,7 +18,7 @@ settings = {
     'snr': 18,
     'modulations': ['8PSK', 'BPSK', 'QPSK'],
     'scale': 50,
-    'num_samples': 2,
+    'num_samples': 20,
     'time_sample': np.arange(128),
     'thrup': 0.1,
     'thrdn': 0.1,
@@ -60,14 +60,13 @@ for (i, mod) in tqdm(enumerate(settings['modulations'])):
 print("\t * total duration: {}s".format(duration))
 
 # Create experiment folder
-exp_name = 'mod_rec_hennequin'
+exp_name = 'mod_rec_hennequin_direct_input'
 exp_dir = './experiments/{}-{}'.format(exp_name, datetime.now().strftime("%Y-%m-%dT%H-%M"))
 if not os.path.exists(exp_dir):
     os.makedirs(exp_dir)
 
 # Define reservoir parameters
 params = {
-    'wGen': 500,
     'wInp': 500,
     'pIR': 0.07,
     'pE_local': 0.5,
@@ -103,11 +102,6 @@ connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['
 # Set currents
 num_syn = len(connectivity['res_res']['w'])
 params['currents'] = {
-    'gInp': {
-        'Iahp': 0.5*pA,
-        'Itau': getTauCurrent(5*ms),
-        'Ispkthr': 0.2*nA
-    },
     'gRes': {
         'Iahp': 0.5*pA,
         # 'Itauahp': getAhpTauCurrent(50*ms),
@@ -134,9 +128,9 @@ with open(settings_path, 'w+') as f:
         f.write('- {}: {}\n'.format(key, value))
 
 # Run experiment
-score = experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
+score = experiment(wGen=None, wInp=params['wInp'], connectivity=connectivity, \
     N=params['N'], Ninp=params['Ninp'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
-    indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
+    direct_input=True, indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
     duration=duration, ro_time=stimulation+settings['pause']*ms, \
     modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
     plot=plot_flags, store=False, title=exp_name, exp_dir=exp_dir, dt=50*us, remove_device=True)
