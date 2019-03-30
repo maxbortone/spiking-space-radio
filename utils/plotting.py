@@ -152,23 +152,23 @@ def plot_input_layer_with_membrane_potential(indices, times, network, duration, 
     ax1.set_yticklabels(['stop', 'Q.dn', 'Q.up', 'I.dn', 'I.up'])
     ax1.set_ylabel("generator neurons")
     ax1.vlines(times[indices==0]/ms, ymin=3.0, ymax=4.0, colors='#2ecc71', linewidth=1)
-    ax1.vlines(times[indices==1]/ms, ymin=2.0, ymax=3.0, colors='#3498db', linewidth=1)
+    ax1.vlines(times[indices==1]/ms, ymin=2.0, ymax=3.0, colors='#e74c3c', linewidth=1)
     ax1.vlines(times[indices==2]/ms, ymin=1.0, ymax=2.0, colors='#e67e22', linewidth=1)
-    ax1.vlines(times[indices==3]/ms, ymin=0.0, ymax=1.0, colors='#e74c3c', linewidth=1)
+    ax1.vlines(times[indices==3]/ms, ymin=0.0, ymax=1.0, colors='#3498db', linewidth=1)
     ax1.vlines(times[indices==4]/ms, ymin=-1.0, ymax=0.0, colors='#8e44ad', linewidth=1)
     ax2 = plt.Subplot(fig, grid[1], sharex=ax1)
     ax2.set_yticks([0.5, 1.5, 2.5, 3.5])
     ax2.set_yticklabels([3, 2, 1, 0])
     ax2.set_ylabel("input neurons")
     ax2.vlines(network['mInp'].t[network['mInp'].i==0]/ms, ymin=3.0, ymax=4.0, colors='#2ecc71', linewidth=1)
-    ax2.vlines(network['mInp'].t[network['mInp'].i==1]/ms, ymin=2.0, ymax=3.0, colors='#3498db', linewidth=1)
+    ax2.vlines(network['mInp'].t[network['mInp'].i==1]/ms, ymin=2.0, ymax=3.0, colors='#e74c3c', linewidth=1)
     ax2.vlines(network['mInp'].t[network['mInp'].i==2]/ms, ymin=1.0, ymax=2.0, colors='#e67e22', linewidth=1)
-    ax2.vlines(network['mInp'].t[network['mInp'].i==3]/ms, ymin=0.0, ymax=1.0, colors='#e74c3c', linewidth=1)
+    ax2.vlines(network['mInp'].t[network['mInp'].i==3]/ms, ymin=0.0, ymax=1.0, colors='#3498db', linewidth=1)
     ax3 = plt.Subplot(fig, grid[2], sharex=ax1)
     ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[0]/nA, c='#2ecc71', label="0")
-    ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[1]/nA, c='#3498db', label="1")
+    ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[1]/nA, c='#e74c3c', label="1")
     ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[2]/nA, c='#e67e22', label="2")
-    ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[3]/nA, c='#e74c3c', label="3")
+    ax3.plot(network['smInp'].t/ms, network['smInp'].Imem[3]/nA, c='#3498db', label="3")
     ax3.axhline(network['gInp'].Ispkthr[0]/nA, linestyle='dashed', linewidth=1, color='#95a5a6', label="Ispkthr")
     ax3.set_ylabel("membrane potential")
     ax3.set_xlabel("time [ms]")
@@ -182,7 +182,7 @@ def plot_input_layer_with_membrane_potential(indices, times, network, duration, 
     fig.add_subplot(ax2)
     fig.add_subplot(ax3)
     
-def plot_hennequin_reservoir_raster(connectivity, params, network, times, duration):
+def plot_hennequin_reservoir_raster(connectivity, params, network, times, duration, bins=None):
     input_neurons_Iup = connectivity['inp_res']['j'][connectivity['inp_res']['i']==0]
     input_neurons_Idn = connectivity['inp_res']['j'][connectivity['inp_res']['i']==1]
     input_neurons_Qup = connectivity['inp_res']['j'][connectivity['inp_res']['i']==2]
@@ -193,11 +193,11 @@ def plot_hennequin_reservoir_raster(connectivity, params, network, times, durati
         if n in input_neurons_Iup:
             colors.append('#2ecc71')
         elif n in input_neurons_Idn:
-            colors.append('#3498db')
+            colors.append('#e74c3c')
         elif n in input_neurons_Qup:
             colors.append('#e67e22')
         elif n in input_neurons_Qdn:
-            colors.append('#e74c3c')
+            colors.append('#3498db')
         elif n < M:
             colors.append('#8e44ad')
         else:
@@ -213,13 +213,51 @@ def plot_hennequin_reservoir_raster(connectivity, params, network, times, durati
     plt.ylabel("neuron index")
     plt.xlabel("time [ms]")
     plt.xlim((0, np.ceil(duration/ms)))
+    if bins!=None:
+        plt.vlines(bins/ms, ymin=0, ymax=params['N'], colors="#95a5a6", linewidth=1, zorder=0)
     lines = [Line2D([0], [0], color='#2ecc71', lw=2),
-             Line2D([0], [0], color='#3498db', lw=2),
-             Line2D([0], [0], color='#e67e22', lw=2),
              Line2D([0], [0], color='#e74c3c', lw=2),
+             Line2D([0], [0], color='#e67e22', lw=2),
+             Line2D([0], [0], color='#3498db', lw=2),
              Line2D([0], [0], color='#8e44ad', lw=2),
              Line2D([0], [0], color='#2c3e50', lw=2)]
     handles = ['I.up', 'I.dn', 'Q.up', 'Q.dn', 'exc', 'inh']
+    plt.legend(lines, handles, loc="upper right")
+
+def plot_hennequin_reservoir_raster_without_input(connectivity, params, network, times, duration, bins=None):
+    input_neurons_Iup = connectivity['inp_res']['j'][connectivity['inp_res']['i']==0]
+    input_neurons_Idn = connectivity['inp_res']['j'][connectivity['inp_res']['i']==1]
+    input_neurons_Qup = connectivity['inp_res']['j'][connectivity['inp_res']['i']==2]
+    input_neurons_Qdn = connectivity['inp_res']['j'][connectivity['inp_res']['i']==3]
+    mask = np.zeros(params['N'])
+    mask[input_neurons_Iup] = 1.0
+    mask[input_neurons_Idn] = 1.0
+    mask[input_neurons_Qup] = 1.0
+    mask[input_neurons_Qdn] = 1.0
+    reservoir_neurons = np.ma.array(np.arange(params['N']), mask=mask)
+    M = params['Ngx']*params['Ngy']
+    colors = []
+    for n in range(params['N']):
+        if n < M:
+            colors.append('#8e44ad')
+        else:
+            colors.append('#2c3e50')
+    positions = []    
+    for n in reservoir_neurons:
+        idx = np.where(network['mRes'].i==n)[0]
+        positions.append(network['mRes'].t[idx]/ms)
+    plt.figure(figsize=(12, 9))
+    plt.eventplot(positions, colors=colors)
+    plt.axvline(times[-1]/ms, linestyle='dashed', color='#95a5a6')
+    plt.gca().invert_yaxis()
+    plt.ylabel("neuron index")
+    plt.xlabel("time [ms]")
+    plt.xlim((0, np.ceil(duration/ms)))
+    if bins!=None:
+        plt.vlines(bins/ms, ymin=0, ymax=params['N'], colors="#95a5a6", linewidth=1, zorder=0)
+    lines = [Line2D([0], [0], color='#8e44ad', lw=2),
+             Line2D([0], [0], color='#2c3e50', lw=2)]
+    handles = ['exc', 'inh']
     plt.legend(lines, handles, loc="upper right")
     
 def plot_currents_distributions(currents):
