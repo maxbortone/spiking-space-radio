@@ -8,10 +8,18 @@ from utils.modulator import AsynchronousDeltaModulator
 def _round_complex(x):
     return np.round(x.real, decimals=2)+np.round(x.imag, decimals=2)*1j
 
+def text_to_bits(text, encoding='utf-8', errors='surrogatepass'):
+    bits = bin(int.from_bytes(text.encode(encoding, errors), 'big'))[2:]
+    return bits.zfill(8 * ((len(bits) + 7) // 8))
+
+def text_from_bits(bits, encoding='utf-8', errors='surrogatepass'):
+    n = int(bits, 2)
+    return n.to_bytes((n.bit_length() + 7) // 8, 'big').decode(encoding, errors) or '\0'
+
 def send(input_string, m=2, modem=PSKModem, Ts=1e-3, Fs=int(6e4), fc=int(3e3)):
     # convert string to bitsarray
     # pylint: disable=too-many-format-args
-    bits_string = ''.join('{0:08b}'.format(x, 'b') for x in bytearray(input_string, encoding='utf-8'))
+    bits_string = text_to_bits(input_string)
     input_bits = np.array([int(b) for b in bits_string])
     # instantiate modem
     modem = modem(m)
