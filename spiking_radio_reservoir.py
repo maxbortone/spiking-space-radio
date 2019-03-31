@@ -1,12 +1,6 @@
-import time, joblib
+import time, joblib, warnings
 import os, shutil
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.gridspec as grs
-import matplotlib.colors as clr
-import matplotlib.cm as cmx
-import matplotlib.ticker as ticker
-from mpl_toolkits import mplot3d
 from datetime import datetime
 from tqdm import tqdm
 from brian2 import nA, pA, amp, ms, us, SpikeMonitor, StateMonitor, SpikeGeneratorGroup, prefs, device, set_device, defaultclock
@@ -14,11 +8,13 @@ from teili import TeiliNetwork
 from teili.core.groups import Neurons, Connections
 from teili.models.neuron_models import DPI
 from teili.models.synapse_models import DPISyn
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegressionCV
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import log_loss, silhouette_score
 from sklearn.metrics.pairwise import cosine_similarity
+from utils.plotting import *
 
 
 def _schliebs_pAB(a, b, AoC, DoC):
@@ -497,7 +493,7 @@ def init_network(components, indices, times):
     network.add(list(components['monitors'].values()))
     return network
 
-def readout(monitor, ro_time, num_neurons, tot_num_samples, bin_size=1):
+def readout(network, connectivity, ro_time, num_neurons, tot_num_samples, bin_size=1):
     """
     Parse the spike monitor of the reservoir and extract the activity
     for each sample in the input stimulus by counting the spikes in
@@ -505,8 +501,13 @@ def readout(monitor, ro_time, num_neurons, tot_num_samples, bin_size=1):
 
     Parameters
     ----------
-    monitor : SpikeMonitor
-        spike monitor of the reservoir
+    network : TeiliNetwork
+        instance of the network with all the commponents
+
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
     
     ro_time : float
         width of the time interval from which to read out
@@ -533,19 +534,24 @@ def readout(monitor, ro_time, num_neurons, tot_num_samples, bin_size=1):
         time edges from which the activity has been extracted
         for each sample
     """
+    input_neurons = []
+    for i in np.unique(connectivity['inp_res']['i']):
+        input_neurons.extend(connectivity['inp_res']['j'][connectivity['inp_res']['i']==i])
+    mask = np.zeros(len(network['mRes'].t), dtype=bool)
+    for n in input_neurons:
+        idx = np.where(network['mRes'].i==n)[0]
+        mask[idx] = True
     X = []
     edges = []
     ro_time = ro_time/ms
     ro_bins = [int(ro_time/bin_size), num_neurons]
     for i in range(tot_num_samples):
         ro_range = [[i*ro_time, (i+1)*ro_time], [0, num_neurons]]
-        window = np.logical_and(monitor.t/ms>i*ro_time, monitor.t/ms<=(i+1)*ro_time)
-        hist, _, _ = np.histogram2d(monitor.t[window]/ms, monitor.i[window], \
+        hist, _, _ = np.histogram2d(network['mRes'].t[mask]/ms, network['mRes'].i[mask], \
             bins=ro_bins, range=ro_range)
         X.append(hist)
         edges.append(ro_range)
-    X = list(map(lambda x: x.T.flatten(), X))
-    return X, ro_bins, edges
+    return np.array(X), ro_bins, edges
 
 # Define classifier
 def classify(X, Y):
@@ -554,29 +560,46 @@ def classify(X, Y):
 
     Parameters
     ----------
-    X : ndarray (num_samples, num_features)
-        readout output from the reservoir for each
-        sample in the stimulus
+    X : list (num_samples)
+        activity for each sample
 
     Y : ndarray (num_samples)
         labels for each sample in the stimulus
 
     Returns
     -------
-    score : float
-        performance metric of the accuracy of the
-        classification (higher is better)
+    accuracy : list
+        classification accuracy at every time bin
     """
+    k = X[0].shape[0]
+    classes = np.unique(Y)
     X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.20, random_state=42)
-    try:
-        clf = LogisticRegression(random_state=42, solver='lbfgs').fit(X_train, Y_train)
-    except Exception as e:
-        print(e)
-        score = -100.0
-    else:
-        Y_pred = clf.predict_proba(X_test)
-        score = log_loss(Y_test, Y_pred)
-    return -1.0*score
+    accuracy = np.zeros(k)
+    with warnings.catch_warnings():
+        warnings.filterwarnings('error')
+        for i in tqdm(range(k)):
+            samples_train = []
+            labels_train = []
+            samples_test = []
+            labels_test = []
+            for c in classes:
+                idx_train = np.where(Y_train==c)[0]
+                for x in X_train[idx_train]:
+                    samples_train.append(x[i])
+                    labels_train.append(c)
+                idx_test = np.where(Y_test==c)[0]
+                for x in X_test[idx_test]:
+                    samples_test.append(x[i])
+                    labels_test.append(c)
+            clf = LogisticRegressionCV(cv=5, multi_class='multinomial')
+            try:
+                clf.fit(samples_train, labels_train)
+            except ConvergenceWarning:
+                pass
+            else:
+                score = clf.score(samples_test, labels_test)
+                accuracy[i] = score
+    return accuracy
 
 
 def score(X, Y, k):
@@ -607,277 +630,6 @@ def score(X, Y, k):
     except:
         score = -1.0
     return score
-
-def plot_raster(monitor, directory=None):
-    """
-    Plot the raster of spikes generated by the input stimulus
-
-    Parameters
-    ----------
-    monitor : SpikeMonitor
-        spike monitor of the reservoir
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    # TODO: add pagination for long stimuli
-    fig = plt.figure()
-    plt.scatter(monitor.t/ms, monitor.i, marker=',', s=2)
-    plt.xlabel('time [ms]')
-    plt.ylabel('reservoir neuron')
-    if directory:
-        plt.savefig(directory+'/raster_plot.pdf')
-        plt.close(fig=fig)
-
-def plot_result(X, Y, bins, edges, modulations, snr, directory=None):
-    """
-    Plot the readout activity for each sample
-
-    Parameters
-    ----------
-    X : ndarray (num_samples, num_features)
-        readout output from the reservoir for each sample
-        in the stimulus
-
-    Y : ndarray (num_samples)
-        labels for each sample in the stimulus
-
-    bins : list
-        size of the time and space bins
-
-    edges : list
-        time edges from which the activity has been extracted
-        for each sample
-
-    modulations : list
-        modulation classes in the input stimulus
-
-    snr : float
-        signal-to-noise level of the input stimulus
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    num_samples = len(X)
-    num_classes = len(np.unique(Y))
-    num_samples_per_class = int(num_samples/num_classes)
-    for i in range(num_samples):
-        sid = i%num_samples_per_class
-        fig= plt.figure()
-        x = X[i].reshape((bins[1], bins[0]))
-        plt.imshow(x, interpolation='nearest', origin='low', aspect='auto', \
-           extent=[0, bins[0], 0, bins[1]], cmap='viridis')
-        plt.title('{} @ {} #{}'.format(modulations[Y[i]], snr, sid))
-        plt.xlabel('vector element')
-        plt.ylabel('reservoir neuron')
-        if directory:
-            plt.savefig(directory+'/{}_{}_{}.pdf'.format(modulations[Y[i]], snr, sid), bbox_inches='tight')
-            plt.close(fig=fig)
-
-
-def plot_network(network, N, weights, directory=None):
-    """
-    Plot the network layers and connections
-
-    Parameters
-    ----------
-    network : TeiliNetwork
-        instance of the network with all the components
-
-    N : int
-        number of neurons in the reservoir
-
-    weights : list
-        weight of each synaptic connection in the reservoir
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2)
-    ax1.scatter(network['sGenInp'].i, network['sGenInp'].j, c='k', marker='.')
-    ax1.set_xlabel('source neuron')
-    ax1.set_ylabel('target neuron')
-    ax1.tick_params(direction='in')
-    ax1.set_xticks([0, 1, 2, 3])
-    ax1.set_xticklabels(['I.up', 'I.dn', 'Q.up', 'Q.dn'])
-    ax1.set_yticks([0, 1])
-    ax1.set_title('Generator')
-    ax2.scatter(network['sInpRes'].i, network['sInpRes'].j, c='k', marker='.')
-    ax2.set_xlabel('source neuron')
-    ax2.set_xticks([0, 1])
-    ax2.tick_params(direction='in')
-    ax2.yaxis.tick_right()
-    ax2.yaxis.set_label_position("right")
-    ax2.yaxis.set_major_locator(ticker.MultipleLocator(25))
-    ax2.set_yticklabels([])
-    ax2.set_title('Input')
-    if directory:
-        plt.savefig(directory+'/network.pdf', bbox_inches='tight')
-        plt.close(fig=fig)
-
-def plot_weights(network, connectivity, N, directory=None):
-    """
-    Plot the network weight matrix
-
-    Parameters
-    ----------
-    network : TeiliNetwork
-        instance of the network with all the commponents
-
-    connectivity : object
-        contains the two connectivity matrices as
-        i and j indices to be used in the connect method
-        of the synapse object in Brian2
-
-    N : int
-        number of neurons in the reservoir
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    W = np.zeros((N, N))
-    W[connectivity['res_res']['i'], connectivity['res_res']['j']] = connectivity['res_res']['w']
-    w_min = connectivity['res_res']['w'].min()
-    w_max = connectivity['res_res']['w'].max()
-    fig, ax = plt.subplots()
-    im = ax.imshow(W.T, interpolation='nearest', origin='low', aspect='auto', \
-                    extent=[0, N, 0, N], cmap='viridis', vmin=w_min, vmax=w_max)
-    ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
-    plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='weight')
-    ax.set_xlabel("source neuron")
-    ax.set_ylabel("target neuron")
-    if directory:
-        plt.savefig(directory+'/weights.pdf', bbox_inches='tight')
-        plt.close(fig=fig)
-
-def plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=None):
-    """
-    Plot the network weights for each neuron
-
-    Parameters
-    ----------
-    network : TeiliNetwork
-        instance of the network with all the commponents
-
-    connectivity : object
-        contains the two connectivity matrices as
-        i and j indices to be used in the connect method
-        of the synapse object in Brian2
-
-    N : int
-        number of neurons in the reservoir
-
-    Ngx : int
-        number of reservoir neurons in the x-axis of the grid
-
-    Ngy : int
-        number of reservoir neurons in the y-axis of the grid
-
-    Ngz : int
-        number of reservoir neurons in the z-axis of the grid
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    source = connectivity['res_res']['i']
-    target = connectivity['res_res']['j']
-    weight = connectivity['res_res']['w']
-    grid = connectivity['grid']
-    norm1  = clr.Normalize(vmin=weight.min(), vmax=weight.max())
-    smap1 = cmx.ScalarMappable(norm=norm1, cmap='viridis')
-    norm2  = clr.Normalize(vmin=0, vmax=9)
-    smap2 = cmx.ScalarMappable(norm=norm2, cmap='tab10')
-    mx, my, mz = np.meshgrid(np.arange(Ngx), np.arange(Ngy), np.arange(Ngz))
-    os.makedirs(directory+'/weights')
-    for n in range(N):
-        fig = plt.figure()
-        ax = plt.axes(projection='3d')
-        sx, sy, sz = tuple(zip(*np.where(grid[:,:,:,0]==n)))[0]
-        t = target[np.where(source==n)[0]]
-        c = np.array(list(map(lambda m: tuple(zip(*np.where(grid[:,:,:,0]==m)))[0], t)))
-        w = weight[np.where(source==n)[0]]
-        colors = np.zeros((Ngx, Ngy, Ngz))
-        exc = np.array(list(zip(*np.where(grid[:,:,:,1]==1))))
-        inh = np.array(list(zip(*np.where(grid[:,:,:,1]==-1))))
-        colors[exc[:,0], exc[:,1], exc[:,2]] = 3
-        colors[inh[:,0], inh[:,1], inh[:,2]] = 0
-        colors[sx, sy, sz] = 2
-        for i in range(len(t)):
-            ax.plot3D([sy, c[i][1]], [sx, c[i][0]], [sz, c[i][2]], color=smap1.to_rgba(w[i]))
-        ax.text(sy, sx, sz, "{}-{}".format(grid[sx, sy, sz, 0], 'e' if grid[sx, sy, sz, 1]==1 else 'i' ), color='k')
-        ax.scatter3D(mx, my, mz, c=smap2.to_rgba(colors.flatten()))
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        ax.set_zlabel("z")
-        if directory:
-            plt.savefig(directory+'/weights/weights_n{}.pdf'.format(n), bbox_inches='tight')
-            plt.close(fig=fig)
-
-def plot_similarity(X, Y, modulations, directory=None):
-    """
-    Plot the cosine similarity matrix between the reservoir 
-    readouts of the samples
-
-    Parameters
-    ----------
-    X : ndarray (num_samples, num_features)
-        readout output from the reservoir for each sample
-        in the stimulus
-
-    Y : ndarray (num_samples)
-        labels for each sample in the stimulus
-
-    modulations : list
-        modulation classes in the input stimulus
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    X = [x for _, x in sorted(zip(Y, X), key=lambda pair: pair[0])]
-    S = cosine_similarity(X)
-    num_samples = len(X)
-    num_classes = len(np.unique(Y))
-    num_samples_per_class = int(num_samples/num_classes)
-    ticks = [(i+1)*num_samples_per_class for i in range(len(modulations))]
-    labels = [mod for _, mod in sorted(zip(np.unique(Y), modulations), key=lambda pair: pair[0])]
-    fig, ax = plt.subplots()
-    im = ax.imshow(S.T, interpolation='nearest', origin='low', aspect='auto', \
-           extent=[0, num_samples, 0, num_samples], cmap='viridis')
-    ax.xaxis.set_major_locator(ticker.FixedLocator(ticks))
-    ax.xaxis.set_major_formatter(ticker.FixedFormatter(labels))
-    ax.yaxis.set_major_locator(ticker.FixedLocator(ticks))
-    ax.yaxis.set_major_formatter(ticker.FixedFormatter(labels))
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-    ax_cbar1 = fig.add_axes([1, 0.1, 0.05, 0.8])
-    plt.colorbar(im, cax=ax_cbar1, orientation='vertical', label='similarity')
-    if directory:
-        plt.savefig(directory+'/similarity.pdf', bbox_inches='tight')
-        plt.close(fig=fig)
-
-def plot_currents(monitor, directory=None):
-    """
-    Plot the some randomly chosen synaptic currents
-
-    Parameters
-    ----------
-    monitor : StateMonitor
-        state monitor of the reservoir
-
-    directory : string
-        path to the folder into which the plot should be saved
-    """
-    recorded_synapsis = monitor.record
-    #print("Synapse: ", recorded_synapsis)
-    fig = plt.figure()
-    grd = grs.GridSpec(len(recorded_synapsis), 1, wspace=0.0, hspace=0.0)
-    for i in range(len(recorded_synapsis)):
-        ax = plt.Subplot(fig, grd[i])
-        ax.plot(monitor.t/ms, monitor.Ie_syn[i], color='red', linestyle='solid', label="Ie_syn")
-        ax.plot(monitor.t/ms, monitor.Ii_syn[i], color='blue', linestyle='dashed', label="Ii_syn")
-        fig.add_subplot(ax)
-    if directory:
-        plt.savefig(directory+'/currents.pdf', bbox_inches='tight')
-        plt.close(fig=fig)
 
 def store_result(X, Y, score, params):
     """
@@ -1052,7 +804,10 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
     network.run(duration, recompile=True)
     # Readout activity
     tot_num_samples = num_samples*len(modulations)
-    X, bins, edges = readout(network['mRes'], ro_time, N, tot_num_samples, bin_size=5)
+    X, bins, edges = readout(network, connectivity, ro_time, N, tot_num_samples, bin_size=5)
+    # Measure reservoir perfomance
+    accuracy = classify(X, Y)
+    s = np.max(accuracy)
     # Plot
     if plot:
         if exp_dir==None:
@@ -1073,11 +828,13 @@ def experiment(wGen=3500, wInp=3500, connectivity=None, \
         if plot['weights3D']:
             plot_weights_3D(network, connectivity, N, Ngx, Ngy, Ngz, directory=plots_dir)
         if plot['similarity']:
-            plot_similarity(X, Y, modulations, directory=plots_dir)
+            S = cosine_similarity(list(map(lambda x: x.T.flatten(), X)))
+            labels = [mod for _, mod in sorted(zip(np.unique(Y), modulations), key=lambda pair: pair[0])]
+            plot_similarity(S, Y, labels, directory=plots_dir)
         if plot['currents']:
             plot_currents(network['smRes'], directory=plots_dir)
-    # Measure reservoir perfomance
-    s = classify(X, Y)
+        if plot['accuracy']:
+            plot_accuracy(bins[0], accuracy, directory=plots_dir)
     if store:
         store_result(X, Y, s, params)
     # Remove device folder

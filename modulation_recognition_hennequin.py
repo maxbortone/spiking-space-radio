@@ -18,7 +18,7 @@ settings = {
     'snr': 18,
     'modulations': ['8PSK', 'BPSK', 'QPSK'],
     'scale': 50,
-    'num_samples': 2,
+    'num_samples': 20,
     'time_sample': np.arange(128),
     'thrup': 0.1,
     'thrdn': 0.1,
@@ -57,6 +57,7 @@ for (i, mod) in tqdm(enumerate(settings['modulations'])):
         times.append(stop_time)
         Y.append(i)
         to = (stimulation+settings['pause']*ms)*(i*settings['num_samples']+j+1)
+Y = np.array(Y)
 print("\t * total duration: {}s".format(duration))
 
 # Create experiment folder
@@ -92,7 +93,8 @@ plot_flags = {
     'weights': True,
     'weights3D': False,
     'similarity': True,
-    'currents': False
+    'currents': False,
+    'accuracy': True
 }
 
 # Setup connectivity of the network
