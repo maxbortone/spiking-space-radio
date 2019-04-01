@@ -305,7 +305,7 @@ def plot_raster(monitor, figsize=(6, 4), directory=None):
         plt.savefig(directory+'/raster_plot.pdf', bbox_inches='tight')
         plt.close(fig=fig)
     
-def plot_hennequin_reservoir_raster(connectivity, params, network, times, duration, \
+def plot_reservoir_raster(connectivity, params, network, times, duration, \
     bins=None, figsize=(6, 4), directory=None):
     """
     Plot 
@@ -317,7 +317,6 @@ def plot_hennequin_reservoir_raster(connectivity, params, network, times, durati
     input_neurons_Idn = connectivity['inp_res']['j'][connectivity['inp_res']['i']==1]
     input_neurons_Qup = connectivity['inp_res']['j'][connectivity['inp_res']['i']==2]
     input_neurons_Qdn = connectivity['inp_res']['j'][connectivity['inp_res']['i']==3]
-    M = params['Ngx']*params['Ngy']
     colors = []
     for n in range(params['N']):
         if n in input_neurons_Iup:
@@ -328,7 +327,7 @@ def plot_hennequin_reservoir_raster(connectivity, params, network, times, durati
             colors.append('#e67e22')
         elif n in input_neurons_Qdn:
             colors.append('#3498db')
-        elif n < M:
+        elif connectivity['types'][n]==1:
             colors.append('#8e44ad')
         else:
             colors.append('#2c3e50')
@@ -425,7 +424,7 @@ def plot_currents(monitor, figsize=(6, 4), directory=None):
         plt.savefig(directory+'/currents.pdf', bbox_inches='tight')
         plt.close(fig=fig)
     
-def plot_currents_distributions(currents, figsize=(6, 4), directory=None):
+def plot_currents_distributions(network, figsize=(6, 4), directory=None):
     """
     Plot 
 
@@ -433,20 +432,20 @@ def plot_currents_distributions(currents, figsize=(6, 4), directory=None):
     ----------
     """
     fig = plt.figure(figsize=figsize)
-    grid = grs.GridSpec(1, 3, wspace=0.2, hspace=0.0)
+    grid = grs.GridSpec(1, 3, wspace=0.3, hspace=0.0)
     ax1 = plt.Subplot(fig, grid[0])
-    ax1.hist(currents['gRes']['Itau']/pA)
+    ax1.hist(network['gRes'].Itau/pA)
     ax1.set_xlabel("Itau [pA]")
     ax1.set_ylabel("counts")
-    ax1.set_title("Neurons")
+    ax1.set_yscale("log")
     ax2 = plt.Subplot(fig, grid[1])
-    ax2.hist(currents['sResRes']['Ie_tau']/pA)
+    ax2.hist(network['sResRes'].Ie_tau/pA)
     ax2.set_xlabel("Ie_tau [pA]")
-    ax2.set_title("Excitatory synapsis")
+    ax2.set_yscale("log")
     ax3 = plt.Subplot(fig, grid[2], sharey=ax2)
-    ax3.hist(currents['sResRes']['Ii_tau']/pA)
+    ax3.hist(network['sResRes'].Ii_tau/pA)
     ax3.set_xlabel("Ii_tau [pA]")
-    ax3.set_title("Inhibitory synapsis")
+    ax3.set_yscale("log")
     fig.add_subplot(ax1)
     fig.add_subplot(ax2)
     fig.add_subplot(ax3)
@@ -579,39 +578,33 @@ def plot_similarity(S, Y, labels, figsize=(6, 4), directory=None):
         plt.close(fig=fig)
 
 
-def plot_network(network, N, weights, figsize=(6, 4), directory=None):
+def plot_network(connectivity, labels, figsize=(6, 4), directory=None):
     """
     Plot the network layers and connections
 
     Parameters
     ----------
-    network : TeiliNetwork
-        instance of the network with all the components
+    connectivity : object
+        contains the two connectivity matrices as
+        i and j indices to be used in the connect method
+        of the synapse object in Brian2
 
-    N : int
-        number of neurons in the reservoir
-
-    weights : list
-        weight of each synaptic connection in the reservoir
+    labels : list
+        names of the input neurons
     """
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
-    ax1.scatter(network['sGenInp'].i, network['sGenInp'].j, c='k', marker='.')
-    ax1.set_xlabel('source neuron')
+    ax1.scatter(connectivity['gen_inp']['i'], connectivity['gen_inp']['j'], c=connectivity['gen_inp']['w'], marker='.')
+    ax1.set_xlabel('spike generator')
     ax1.set_ylabel('target neuron')
     ax1.tick_params(direction='in')
-    ax1.set_xticks([0, 1, 2, 3])
-    ax1.set_xticklabels(['I.up', 'I.dn', 'Q.up', 'Q.dn'])
-    ax1.set_yticks([0, 1])
-    ax1.set_title('Generator')
-    ax2.scatter(network['sInpRes'].i, network['sInpRes'].j, c='k', marker='.')
-    ax2.set_xlabel('source neuron')
-    ax2.set_xticks([0, 1])
+    ax1.set_xticklabels(labels)
+    ax2.scatter(connectivity['inp_res']['i'], connectivity['inp_res']['j'], c='k', marker='.')
+    ax2.set_xlabel('input neuron')
     ax2.tick_params(direction='in')
     ax2.yaxis.tick_right()
     ax2.yaxis.set_label_position("right")
     ax2.yaxis.set_major_locator(ticker.MultipleLocator(25))
     ax2.set_yticklabels([])
-    ax2.set_title('Input')
     if directory:
         plt.savefig(directory+'/network.pdf', bbox_inches='tight')
         plt.close(fig=fig)
