@@ -22,16 +22,16 @@ settings = {
     'scale': 50,
     'num_samples': 20,
     'time_sample': np.arange(128),
-    'thrup': 0.1,
-    'thrdn': 0.1,
+    'thrup': 0.01,
+    'thrdn': 0.01,
     'resampling_factor': 200,
-    'stretch_factor': 1000,
+    'stretch_factor': 50,
     'stop_after': 10000,
     'stop_neuron': 4,
     'pause': 500
 }
 tot_num_samples = settings['num_samples']*len(settings['modulations'])
-dataset, _ = load_dataset('./data/radioML/RML2016.10a_dict.pkl', snr=settings['snr'], scale=settings['scale'])
+dataset = load_dataset('./data/radioML/RML2016.10a_dict.pkl', snr=settings['snr'], scale=settings['scale'])
 # Define delta modulators
 modulator = [
     AsynchronousDeltaModulator(settings['thrup'], settings['thrdn'], settings['resampling_factor']),
@@ -63,28 +63,27 @@ Y = np.array(Y)
 print("\t * total duration: {}s".format(duration))
 
 # Create experiment folder
-exp_name = 'mod_rec_hennequin'
+exp_name = 'mod_rec_schliebs_direct_input'
 exp_dir = './experiments/{}-{}'.format(exp_name, datetime.now().strftime("%Y-%m-%dT%H-%M"))
 if not os.path.exists(exp_dir):
     os.makedirs(exp_dir)
 
 # Define reservoir parameters
 params = {
-    'wGen': 500,
     'wInp': 500,
-    'pIR': 0.07,
-    'pE_local': 0.5,
-    'pI_local': 1.0,
-    'k': 3,
-    'DoC': 0.2,
-    'loc_wResE': 120,
-    'scale_wResE': 20,
-    'loc_wResI': -200,
-    'scale_wResI': 40,
+    'pIR': 0.1,
+    'pInh': 0.2,
+    'AoC': [0.3, 0.2, 0.5, 0.1],
+    'DoC': 2,
+    'loc_wResE': 1,
+    'scale_wResE': 0.5,
+    'loc_wResI': -1,
+    'scale_wResI': 0.5,
     'Ninp': 4,
     'N': 800,
-    'Ngx': 20,
-    'Ngy': 20
+    'Ngx': 10,
+    'Ngy': 10,
+    'Ngz': 8,
 }
 
 # Plots
@@ -93,15 +92,15 @@ plot_flags = {
     'result': True,
     'network': True,
     'weights': True,
-    'weights3D': False,
+    'weights3D': True,
     'similarity': True,
     'currents': True,
     'accuracy': True
 }
 
 # Setup connectivity of the network
-connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['Ngx'], params['Ngy'], \
-    params['pE_local'], params['pI_local'], params['k'], params['DoC'], \
+connectivity = setup_schliebs_connectivity(params['N'], params['pInh'], params['pIR'], \
+    params['Ngx'], params['Ngy'], params['Ngz'], params['AoC'], params['DoC'], \
     params['loc_wResE'], params['scale_wResE'], params['loc_wResI'], params['scale_wResI'])
 
 # Set currents
@@ -148,10 +147,10 @@ with open(settings_path, 'w+') as f:
         f.write('- {}: {}\n'.format(key, value))
 
 # Run experiment
-score = experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, mismatch=params['mismatch'], \
-    N=params['N'], Ninp=params['Ninp'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
-    indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
+score = experiment(wGen=None, wInp=params['wInp'], connectivity=connectivity, mismatch=params['mismatch'], \
+    N=params['N'], Ninp=params['Ninp'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], Ngz=params['Ngz'], \
+    direct_input=True, indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
     duration=duration, ro_time=stimulation+settings['pause']*ms, \
     modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
-    plot=plot_flags, store=True, title=exp_name, exp_dir=exp_dir, dt=50*us, remove_device=True)
+    plot=plot_flags, store=False, title=exp_name, exp_dir=exp_dir, dt=50*us, remove_device=True)
 print(score)

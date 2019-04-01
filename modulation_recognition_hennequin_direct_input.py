@@ -3,6 +3,8 @@ from utils.dataset import load_dataset
 from utils.reservoir import getTauCurrent, getAhpTauCurrent
 from utils.modulator import AsynchronousDeltaModulator, modulate
 
+np.random.seed(42)
+
 # Set brian2 extra compilation arguments
 prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 
@@ -91,7 +93,8 @@ plot_flags = {
     'weights': True,
     'weights3D': False,
     'similarity': True,
-    'currents': False
+    'currents': True,
+    'accuracy': True
 }
 
 # Setup connectivity of the network
@@ -105,15 +108,25 @@ params['currents'] = {
     'gRes': {
         'Iahp': 0.5*pA,
         # 'Itauahp': getAhpTauCurrent(50*ms),
-        'Itau': np.random.normal(loc=getTauCurrent(20*ms)/pA, scale=1, size=params['N'])*pA,
+        'Itau': getTauCurrent(20*ms),
         'Ispkthr': 0.2*nA
     },
     'sInpRes': {
         'Ie_tau': getTauCurrent(7*ms)
     },
     'sResRes': {
-        'Ie_tau': np.random.normal(loc=getTauCurrent(7*ms)/pA, scale=1, size=num_syn)*pA,
-        'Ii_tau': np.random.normal(loc=getTauCurrent(7*ms)/pA, scale=1, size=num_syn)*pA,
+        'Ie_tau': getTauCurrent(7*ms),
+        'Ii_tau': getTauCurrent(7*ms)
+    }
+}
+# Set mismatch
+params['mismatch'] = {
+    'gRes': {
+        'Itau': 0.1
+    },
+    'sResRes': {
+        'Ie_tau': 0.1,
+        'Ii_tau': 0.1,
     }
 }
 
@@ -128,10 +141,10 @@ with open(settings_path, 'w+') as f:
         f.write('- {}: {}\n'.format(key, value))
 
 # Run experiment
-score = experiment(wGen=None, wInp=params['wInp'], connectivity=connectivity, \
+score = experiment(wGen=None, wInp=params['wInp'], connectivity=connectivity, mismatch=params['mismatch'], \
     N=params['N'], Ninp=params['Ninp'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
     direct_input=True, indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
     duration=duration, ro_time=stimulation+settings['pause']*ms, \
     modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
-    plot=plot_flags, store=False, title=exp_name, exp_dir=exp_dir, dt=50*us, remove_device=True)
+    plot=plot_flags, store=True, title=exp_name, exp_dir=exp_dir, dt=50*us, remove_device=True)
 print(score)

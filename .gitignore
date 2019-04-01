@@ -1,4 +1,5 @@
 *.ipynb
+*.joblib
 .python-version
 .ipynb_checkpoints/
 .vscode/
