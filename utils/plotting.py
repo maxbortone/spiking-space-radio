@@ -484,8 +484,8 @@ def plot_result(X, Y, bins, edges, modulations, snr, figsize=(6, 4), directory=N
     for i in range(num_samples):
         sid = i%num_samples_per_class
         fig= plt.figure(figsize=figsize)
-        plt.imshow(X[i].T, interpolation='nearest', origin='low', aspect='auto', \
-           extent=[0, bins[0], 0, bins[1]], cmap='viridis')
+        plt.imshow(X[i].T, interpolation='nearest', origin='upper', aspect='auto', \
+           extent=[0, bins[0], bins[1], 0], cmap='viridis')
         plt.title('{} @ {} #{}'.format(modulations[Y[i]], snr, sid))
         plt.xlabel('state')
         plt.ylabel('feature')

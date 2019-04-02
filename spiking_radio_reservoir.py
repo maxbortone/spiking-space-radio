@@ -133,7 +133,7 @@ def setup_schliebs_connectivity(N, pInh, pIR, Ngx, Ngy, Ngz, AoC, DoC, \
     # connect reservoir neurons
     Cres = [[], []]
     Wres = []
-    for n in neurons:
+    for n in tqdm(neurons):
         a = _schliebs_coords(n, grid)
         norm = 1.0 #_norm(a, AoC, DoC, grid)
         for m in neurons:
@@ -303,7 +303,7 @@ def setup_hennequin_connectivity(N, pIR, Ngx, Ngy, pE_local, pI_local, k, DoC, \
     # connect reservoir neurons
     Cres = [[], []]
     Wres = []
-    for n in neurons:
+    for n in tqdm(neurons):
         a = _hennequin_coords(n, grid)
         if n<M:
             p_local = pE_local
@@ -578,10 +578,10 @@ def readout(network, connectivity, ro_time, num_neurons, tot_num_samples, bin_si
     input_neurons = []
     for i in np.unique(connectivity['inp_res']['i']):
         input_neurons.extend(connectivity['inp_res']['j'][connectivity['inp_res']['i']==i])
-    mask = np.zeros(len(network['mRes'].t), dtype=bool)
+    mask = np.ones(len(network['mRes'].t), dtype=bool)
     for n in input_neurons:
         idx = np.where(network['mRes'].i==n)[0]
-        mask[idx] = True
+        mask[idx] = False
     X = []
     edges = []
     ro_time = ro_time/ms
