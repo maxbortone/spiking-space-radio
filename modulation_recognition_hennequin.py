@@ -18,9 +18,9 @@ prefs.devices.cpp_standalone.extra_make_args_unix = ["-j6"]
 print("- Importing dataset")
 settings = {
     'snr': 18,
-    'modulations': ['8PSK', 'BPSK', 'QPSK'],
+    'modulations': ['8PSK', 'BPSK', 'QPSK'],# 'PAM4', 'GFSK', 'CPFSK'. 'AM-SSB'],
     'scale': 50,
-    'num_samples': 20,
+    'num_samples': 100,
     'time_sample': np.arange(128),
     'thrup': 0.1,
     'thrdn': 0.1,
@@ -79,7 +79,7 @@ params = {
     'DoC': 0.2,
     'loc_wResE': 120,
     'scale_wResE': 20,
-    'loc_wResI': -200,
+    'loc_wResI': -250,
     'scale_wResI': 40,
     'Ninp': 4,
     'N': 800,
@@ -113,8 +113,8 @@ params['currents'] = {
         'Ispkthr': 0.2*nA
     },
     'gRes': {
-        'Iahp': 0.5*pA,
-        # 'Itauahp': getAhpTauCurrent(50*ms),
+        'Iahp': 1.0*pA,
+        'Itauahp': getAhpTauCurrent(10*ms),
         'Itau': getTauCurrent(20*ms),
         'Ispkthr': 0.2*nA
     },
@@ -129,7 +129,8 @@ params['currents'] = {
 # Set mismatch
 params['mismatch'] = {
     'gRes': {
-        'Itau': 0.1
+        'Itau': 0.1,
+        'Ispkthr': 0.2
     },
     'sResRes': {
         'Ie_tau': 0.1,
