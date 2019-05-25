@@ -2,6 +2,7 @@ import hashlib
 from spiking_radio_reservoir import *
 from utils.dataset import load_dataset
 from utils.modulator import AsynchronousDeltaModulator, modulate
+from utils.reservoir import getTauCurrent, getAhpTauCurrent
 from bayes_opt import BayesianOptimization
 from bayes_opt.observer import JSONLogger
 from bayes_opt.event import Events
@@ -98,6 +99,36 @@ params = {
     'tau': 20,
     'Ngx': 10,
     'Ngy': 10,
+    'currents': {
+        'gInp': {
+            'Iahp': 0.5*pA,
+            'Itau': getTauCurrent(5*ms),
+            'Ispkthr': 0.2*nA
+        },
+        'gRes': {
+            'Iahp': 1.0*pA,
+            'Itauahp': getAhpTauCurrent(10*ms),
+            'Itau': getTauCurrent(20*ms),
+            'Ispkthr': 0.2*nA
+        },
+        'sInpRes': {
+            'Ie_tau': getTauCurrent(7*ms)
+        },
+        'sResRes': {
+            'Ie_tau': getTauCurrent(7*ms),
+            'Ii_tau': getTauCurrent(7*ms)
+        }
+    },
+    'mismatch': {
+        'gRes': {
+            'Itau': 0.1,
+            'Ispkthr': 0.2
+        },
+        'sResRes': {
+            'Ie_tau': 0.1,
+            'Ii_tau': 0.1,
+        }
+    }
 }
 pbounds = {
     #'N': (50, 200),            # number of neurons   
@@ -122,12 +153,12 @@ def bo_process(loc_wResE=1000, scale_wResE=50, loc_wResI=-1000, scale_wResI=50):
     connectivity = setup_hennequin_connectivity(params['N'], params['pIR'], params['Ngx'], params['Ngy'], \
         params['pE_local'], params['pI_local'], params['k'], params['DoC'], \
         loc_wResE, scale_wResE, loc_wResI, scale_wResI)
-    return experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, \
-        N=params['N'], tau=params['tau'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
+    return experiment(wGen=params['wGen'], wInp=params['wInp'], connectivity=connectivity, mismatch=params['mismatch'], \
+        N=params['N'], Ninp=params['Ninp'], currents=params['currents'], Ngx=params['Ngx'], Ngy=params['Ngy'], \
         indices=indices, times=times, stretch_factor=settings['stretch_factor'], \
         duration=duration, ro_time=stimulation+settings['pause']*ms, \
         modulations=settings['modulations'], snr=settings['snr'], num_samples=settings['num_samples'], Y=Y, \
-        plot=plot_flags, store=False, title=title, exp_dir=exp_dir, remove_device=True)
+        plot=plot_flags, store=False, title=title, exp_dir=exp_dir, dt=50*us, remove_device=True)
 
 optimizer = BayesianOptimization(
     f=bo_process,
@@ -153,7 +184,6 @@ log_path = exp_dir + '/logger.json'
 logger = JSONLogger(path=log_path)
 optimizer.subscribe(Events.OPTMIZATION_STEP, logger)
 
-# TODO: try multithreading
 # Optimize model performance
 print("- Starting optimization")
 start = time.perf_counter()
